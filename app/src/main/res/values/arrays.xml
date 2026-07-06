@@ -1,0 +1,41 @@
+<resources>
+    <string-array name="source_lang_labels">
+        <item>الإنجليزية</item>
+        <item>العربية</item>
+        <item>الفرنسية</item>
+        <item>الإسبانية</item>
+        <item>التركية</item>
+        <item>اليابانية</item>
+        <item>الكورية</item>
+        <item>الروسية</item>
+    </string-array>
+
+    <string-array name="source_lang_codes">
+        <item>en-US</item>
+        <item>ar-SA</item>
+        <item>fr-FR</item>
+        <item>es-ES</item>
+        <item>tr-TR</item>
+        <item>ja-JP</item>
+        <item>ko-KR</item>
+        <item>ru-RU</item>
+    </string-array>
+
+    <string-array name="target_lang_labels">
+        <item>العربية</item>
+        <item>الإنجليزية</item>
+        <item>الفرنسية</item>
+        <item>الإسبانية</item>
+        <item>التركية</item>
+        <item>الأردية</item>
+    </string-array>
+
+    <string-array name="target_lang_codes">
+        <item>ar</item>
+        <item>en</item>
+        <item>fr</item>
+        <item>es</item>
+        <item>tr</item>
+        <item>ur</item>
+    </string-array>
+</resources>

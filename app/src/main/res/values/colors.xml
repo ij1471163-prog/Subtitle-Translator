@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="app_background">#F5F5F5</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_premium_bg">#6B5B95</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#888888</color>
+    
+    <!-- Accent Colors -->
+    <color name="accent_green">#4CAF50</color>
+    <color name="accent_orange">#FF9800</color>
+    <color name="accent_red">#F44336</color>
+    
+    <!-- Button Colors -->
+    <color name="button_primary">#6B5B95</color>
+    <color name="button_secondary">#E0E0E0</color>
+    
+    <!-- Card Colors -->
+    <color name="privacy_card_bg">#E8F5E9</color>
+</resources>
