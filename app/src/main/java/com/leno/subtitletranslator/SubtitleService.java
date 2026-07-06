@@ -24,78 +24,207 @@ import android.speech.SpeechRecognizer;
 import android.view.Gravity;
 import android.view.WindowManager;
 import android.widget.TextView;
-
 import androidx.core.app.NotificationCompat;
-
 import java.util.ArrayList;
 
 public class SubtitleService extends Service {
 
-    private static final String CHANNEL_ID  = "subtitle_channel";
+    private static final String CHANNEL_ID  = "subtitle_ch";
     private static final int    NOTIF_ID    = 1001;
     public  static final String ACTION_STOP = "com.leno.subtitletranslator.STOP";
 
-    // ── Backoff: يزيد كلما طال السكوت ──────────────────────────
-    // 0s → 0.5s → 1s → 2s → 5s → 15s → 30s
-    // بعد 30 ثانية سكوت يستنى 30 ثانية = توفير 95% بطارية
-    private static final long[] BACKOFF_MS = {0, 500, 1000, 2000, 5000, 15000, 30000};
-    private int silenceCount = 0;
+    // Backoff: كلما طال السكوت زادت الاستراحة
+    // 0 → 1s → 2s → 5s → 15s → 30s → 60s
+    private static final long[] BACKOFF = {0, 1000, 2000, 5000, 15000, 30000, 60000};
+    private int silence = 0;
 
-    // ── State ───────────────────────────────────────────────────
-    private WindowManager     windowManager;
-    private TextView          subtitleView;
-    private SpeechRecognizer  recognizer;
+    private WindowManager        wm;
+    private TextView             overlay;
+    private SpeechRecognizer     recognizer;
     private PowerManager.WakeLock wakeLock;
-    private final Handler     mainHandler = new Handler(Looper.getMainLooper());
-    private boolean           running     = false;
+    private final Handler        handler = new Handler(Looper.getMainLooper());
+    private boolean              running = false;
+    private boolean              recognizerBusy = false;
 
-    // ── Settings ────────────────────────────────────────────────
-    private String sourceLang = "en-US";
-    private String targetLang = "ar";
+    private String src = "en-US";
+    private String tgt = "ar";
 
-    // ── Screen off receiver ─────────────────────────────────────
-    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context ctx, Intent intent) {
-            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
-                // الشاشة أغلقت = المستخدم مو شايف الترجمة = أوقف
-                stopSelf();
-            }
+    // إغلاق الشاشة = إيقاف فوري (توفير بطارية)
+    private final BroadcastReceiver screenOff = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            if (Intent.ACTION_SCREEN_OFF.equals(i.getAction())) stopSelf();
         }
     };
-
-    // ═══════════════════════════════════════════════════════════
-    // Lifecycle
-    // ═══════════════════════════════════════════════════════════
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        // تحميل الإعدادات
-        SharedPreferences prefs = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
-        sourceLang = prefs.getString(MainActivity.KEY_SOURCE_LANG, "en-US");
-        targetLang = prefs.getString(MainActivity.KEY_TARGET_LANG, "ar");
+        SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
+        src = p.getString(MainActivity.KEY_SOURCE_LANG, "en-US");
+        tgt = p.getString(MainActivity.KEY_TARGET_LANG, "ar");
 
-        // WakeLock خفيف — يمنع الـ CPU من النوم بس مو الشاشة
+        // WakeLock خفيف — CPU فقط بدون شاشة
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-        wakeLock = pm.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "SubtitleTranslator::WakeLock"
-        );
-        wakeLock.acquire(60 * 60 * 1000L); // max 1 ساعة
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ST::lock");
+        wakeLock.acquire(60 * 60 * 1000L); // max ساعة
 
-        // استمع لإغلاق الشاشة
-        IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
-        registerReceiver(screenReceiver, filter);
-
-        // ابدأ
-        createNotificationChannel();
-        startForeground(NOTIF_ID, buildNotification());
+        registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        createChannel();
+        startForeground(NOTIF_ID, buildNotif());
         addOverlay();
+
         running = true;
-        mainHandler.post(this::initRecognizer);
+        handler.post(this::initRecognizer);
     }
+
+    // ── SpeechRecognizer ────────────────────────────────────────
+
+    private void initRecognizer() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            show("التعرف الصوتي غير متاح");
+            return;
+        }
+        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
+        recognizer.setRecognitionListener(listener);
+        listen();
+    }
+
+    private void listen() {
+        if (!running || recognizerBusy) return;
+        recognizerBusy = true;
+
+        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, src);
+        // لا نطلب PARTIAL_RESULTS = أقل استهلاك CPU
+        i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
+
+        try { recognizer.startListening(i); }
+        catch (Exception e) { recognizerBusy = false; scheduleNext(); }
+    }
+
+    private void scheduleNext() {
+        if (!running) return;
+        int idx = Math.min(silence, BACKOFF.length - 1);
+        handler.postDelayed(this::listen, BACKOFF[idx]);
+    }
+
+    private final RecognitionListener listener = new RecognitionListener() {
+
+        @Override
+        public void onResults(Bundle r) {
+            recognizerBusy = false;
+            ArrayList<String> m = r.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (m != null && !m.isEmpty() && !m.get(0).trim().isEmpty()) {
+                silence = 0; // كلام = reset backoff
+                String text = m.get(0);
+                TranslationHelper.translateAsync(text, src, tgt, translated -> show(translated));
+            } else {
+                silence = Math.min(silence + 1, BACKOFF.length - 1);
+            }
+            scheduleNext();
+        }
+
+        @Override
+        public void onError(int e) {
+            recognizerBusy = false;
+            if (e == SpeechRecognizer.ERROR_NO_MATCH
+             || e == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                silence = Math.min(silence + 1, BACKOFF.length - 1);
+            } else if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                // انتظر أطول لما busy
+                handler.postDelayed(this::resetAndListen, 2000);
+                return;
+            } else {
+                silence = 0;
+            }
+            scheduleNext();
+        }
+
+        private void resetAndListen() {
+            if (recognizer != null) {
+                try { recognizer.destroy(); } catch (Exception ignored) {}
+            }
+            recognizer = SpeechRecognizer.createSpeechRecognizer(SubtitleService.this);
+            recognizer.setRecognitionListener(this);
+            recognizerBusy = false;
+            listen();
+        }
+
+        @Override public void onPartialResults(Bundle b) {}
+        @Override public void onReadyForSpeech(Bundle b) {}
+        @Override public void onBeginningOfSpeech() {}
+        @Override public void onEndOfSpeech() {}
+        @Override public void onRmsChanged(float v) {}
+        @Override public void onBufferReceived(byte[] b) {}
+        @Override public void onEvent(int t, Bundle b) {}
+    };
+
+    // ── Overlay ──────────────────────────────────────────────────
+
+    private void addOverlay() {
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        overlay = new TextView(this);
+        overlay.setTextColor(Color.WHITE);
+        overlay.setTextSize(18f);
+        overlay.setGravity(Gravity.CENTER);
+        overlay.setShadowLayer(8f, 0f, 2f, Color.BLACK);
+        overlay.setBackgroundColor(Color.TRANSPARENT);
+        overlay.setPadding(20, 8, 20, 8);
+        overlay.setMaxLines(2);
+
+        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            : WindowManager.LayoutParams.TYPE_PHONE;
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.BOTTOM;
+        lp.y = 120;
+        wm.addView(overlay, lp);
+    }
+
+    private void show(String text) {
+        handler.post(() -> { if (overlay != null) overlay.setText(text); });
+    }
+
+    // ── Notification ─────────────────────────────────────────────
+
+    private void createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel c = new NotificationChannel(
+                CHANNEL_ID, "الترجمة", NotificationManager.IMPORTANCE_LOW);
+            c.setShowBadge(false);
+            c.setSound(null, null);
+            getSystemService(NotificationManager.class).createNotificationChannel(c);
+        }
+    }
+
+    private Notification buildNotif() {
+        int f = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            ? PendingIntent.FLAG_IMMUTABLE : 0;
+        PendingIntent stop = PendingIntent.getService(this, 0,
+            new Intent(this, SubtitleService.class).setAction(ACTION_STOP), f);
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("الترجمة شغالة")
+            .setContentText("اضغط إيقاف")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .addAction(android.R.drawable.ic_media_pause, "إيقاف", stop)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .build();
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -109,175 +238,17 @@ public class SubtitleService extends Service {
     @Override
     public void onDestroy() {
         running = false;
-        mainHandler.removeCallbacksAndMessages(null);
-
-        // حرر الـ WakeLock
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
-        }
-
-        // أوقف الاستماع
+        handler.removeCallbacksAndMessages(null);
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (recognizer != null) {
             try { recognizer.destroy(); } catch (Exception ignored) {}
         }
-
-        // احذف الـ overlay
-        if (windowManager != null && subtitleView != null) {
-            try { windowManager.removeView(subtitleView); } catch (Exception ignored) {}
+        if (wm != null && overlay != null) {
+            try { wm.removeView(overlay); } catch (Exception ignored) {}
         }
-
-        // ألغِ receiver
-        try { unregisterReceiver(screenReceiver); } catch (Exception ignored) {}
-
+        try { unregisterReceiver(screenOff); } catch (Exception ignored) {}
         super.onDestroy();
     }
 
     @Override public IBinder onBind(Intent i) { return null; }
-
-    // ═══════════════════════════════════════════════════════════
-    // Notification
-    // ═══════════════════════════════════════════════════════════
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(
-                CHANNEL_ID, "الترجمة المباشرة", NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("ترجمة فيديو مباشرة");
-            ch.setShowBadge(false);
-            getSystemService(NotificationManager.class).createNotificationChannel(ch);
-        }
-    }
-
-    private Notification buildNotification() {
-        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-            ? PendingIntent.FLAG_IMMUTABLE : 0;
-
-        PendingIntent stopIntent = PendingIntent.getService(
-            this, 0,
-            new Intent(this, SubtitleService.class).setAction(ACTION_STOP),
-            flags
-        );
-
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("الترجمة شغالة")
-            .setContentText("اضغط إيقاف للإنهاء")
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "إيقاف", stopIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setSilent(true)
-            .build();
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // Overlay
-    // ═══════════════════════════════════════════════════════════
-
-    private void addOverlay() {
-        windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-
-        subtitleView = new TextView(this);
-        subtitleView.setTextColor(Color.WHITE);
-        subtitleView.setTextSize(18);
-        subtitleView.setGravity(Gravity.CENTER);
-        subtitleView.setShadowLayer(6f, 0f, 2f, Color.BLACK);
-        subtitleView.setBackgroundColor(Color.TRANSPARENT);
-        subtitleView.setPadding(16, 8, 16, 8);
-        subtitleView.setMaxLines(3);
-
-        int type = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            : WindowManager.LayoutParams.TYPE_PHONE;
-
-        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        );
-        params.gravity = Gravity.BOTTOM;
-        params.y = 120;
-
-        windowManager.addView(subtitleView, params);
-    }
-
-    private void showText(String text) {
-        mainHandler.post(() -> {
-            if (subtitleView != null) subtitleView.setText(text);
-        });
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // Speech Recognition
-    // ═══════════════════════════════════════════════════════════
-
-    private void initRecognizer() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            showText("التعرف الصوتي غير متاح");
-            return;
-        }
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this);
-        recognizer.setRecognitionListener(listener);
-        startListening();
-    }
-
-    private void startListening() {
-        if (!running) return;
-        Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, sourceLang);
-        i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
-        i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName());
-        try {
-            recognizer.startListening(i);
-        } catch (Exception e) {
-            scheduleRestart();
-        }
-    }
-
-    private void scheduleRestart() {
-        if (!running) return;
-        int idx = Math.min(silenceCount, BACKOFF_MS.length - 1);
-        long delay = BACKOFF_MS[idx];
-        mainHandler.postDelayed(this::startListening, delay);
-    }
-
-    private final RecognitionListener listener = new RecognitionListener() {
-
-        @Override
-        public void onResults(Bundle results) {
-            ArrayList<String> matches =
-                results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-            if (matches != null && !matches.isEmpty()) {
-                silenceCount = 0; // كلام = reset backoff
-                String text = matches.get(0);
-                TranslationHelper.translateAsync(text, sourceLang, targetLang,
-                    translated -> showText(translated));
-            }
-            scheduleRestart();
-        }
-
-        @Override
-        public void onError(int error) {
-            if (error == SpeechRecognizer.ERROR_NO_MATCH
-             || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                silenceCount++; // سكوت = زِد الـ backoff
-            } else {
-                silenceCount = 0;
-            }
-            scheduleRestart();
-        }
-
-        // ── Unused callbacks ─────────────────────────────────
-        @Override public void onPartialResults(Bundle b) {}
-        @Override public void onReadyForSpeech(Bundle b) {}
-        @Override public void onBeginningOfSpeech() {}
-        @Override public void onEndOfSpeech() {}
-        @Override public void onRmsChanged(float v) {}
-        @Override public void onBufferReceived(byte[] b) {}
-        @Override public void onEvent(int t, Bundle b) {}
-    };
 }
