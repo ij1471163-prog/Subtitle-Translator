@@ -25,9 +25,9 @@ import androidx.core.content.ContextCompat;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final int REQ_MIC     = 100;
-    private static final int REQ_OVERLAY = 101;
-    private static final int REQ_NOTIF   = 102;
+    private static final int REQ_MIC        = 100;
+    private static final int REQ_OVERLAY    = 101;
+    private static final int REQ_NOTIF      = 102;
 
     public static final String PREFS            = "subtitle_prefs";
     public static final String KEY_SOURCE_LANG  = "source_lang";
@@ -40,7 +40,11 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private UserManager userManager;
 
-    // ─────────────────────── Lifecycle ───────────────────────
+    // ── AudioPlaybackCapture ─────────────────────────────────────
+    private static Intent projectionData = null;
+    public static Intent getProjectionData() { return projectionData; }
+
+    // ─────────────────────── Lifecycle ───────────────────────────
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,16 +64,16 @@ public class MainActivity extends AppCompatActivity {
         updateStatus();
     }
 
-    // ─────────────────────── UI Setup ───────────────────────
+    // ─────────────────────── UI Setup ────────────────────────────
 
     private void initUI() {
-        spinnerSource    = findViewById(R.id.spinnerSource);
-        spinnerTarget    = findViewById(R.id.spinnerTarget);
-        tvStatus         = findViewById(R.id.tvStatus);
-        tvRemainingTime  = findViewById(R.id.tvRemainingTime);
-        btnStart         = findViewById(R.id.btnStart);
-        btnStop          = findViewById(R.id.btnStop);
-        progressBar      = findViewById(R.id.progressBar);
+        spinnerSource   = findViewById(R.id.spinnerSource);
+        spinnerTarget   = findViewById(R.id.spinnerTarget);
+        tvStatus        = findViewById(R.id.tvStatus);
+        tvRemainingTime = findViewById(R.id.tvRemainingTime);
+        btnStart        = findViewById(R.id.btnStart);
+        btnStop         = findViewById(R.id.btnStop);
+        progressBar     = findViewById(R.id.progressBar);
 
         setupSpinners();
         btnStart.setOnClickListener(v -> attemptStart());
@@ -94,15 +98,15 @@ public class MainActivity extends AppCompatActivity {
         restoreSpinner(spinnerTarget, R.array.target_lang_codes, KEY_TARGET_LANG, "ar");
     }
 
-    private void restoreSpinner(Spinner spinner, int arrayRes, String prefKey, String defaultVal) {
-        String saved = getPrefs().getString(prefKey, defaultVal);
+    private void restoreSpinner(Spinner spinner, int arrayRes, String prefKey, String def) {
+        String saved = getPrefs().getString(prefKey, def);
         String[] codes = getResources().getStringArray(arrayRes);
         for (int i = 0; i < codes.length; i++) {
             if (codes[i].equals(saved)) { spinner.setSelection(i); break; }
         }
     }
 
-    // ─────────────────────── Permission Flow ───────────────────────
+    // ─────────────────────── Permission Flow ─────────────────────
 
     private void attemptStart() {
         if (!userManager.canTranslate()) { showUpgradeDialog(); return; }
@@ -123,7 +127,8 @@ public class MainActivity extends AppCompatActivity {
         // 2. Microphone
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO)) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    Manifest.permission.RECORD_AUDIO)) {
                 new AlertDialog.Builder(this)
                     .setTitle("🎤 صلاحية الميكروفون")
                     .setMessage("التطبيق يحتاج الميكروفون علشان يسمع الصوت ويترجمه")
@@ -148,6 +153,18 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 4. AudioPlaybackCapture (Android 10+)
+        if (AudioCaptureService.isSupported() && projectionData == null) {
+            new AlertDialog.Builder(this)
+                .setTitle("🎬 التقاط صوت الفيديو")
+                .setMessage("علشان يترجم صوت الفيديو مباشرة، اضغط ابدأ الآن")
+                .setPositiveButton("ابدأ", (d, w) ->
+                    AudioCaptureService.requestPermission(this))
+                .setNegativeButton("بس الميكروفون", (d, w) -> startTranslation())
+                .show();
+            return;
+        }
+
         startTranslation();
     }
 
@@ -164,10 +181,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
-        if (req == REQ_OVERLAY && Settings.canDrawOverlays(this)) attemptStart();
+        if (req == REQ_OVERLAY && Settings.canDrawOverlays(this)) {
+            attemptStart();
+        } else if (req == AudioCaptureService.REQUEST_CODE) {
+            // استقبل إذن Playback Capture
+            if (res == RESULT_OK) {
+                projectionData = data;
+            }
+            startTranslation();
+        }
     }
 
-    // ─────────────────────── Service Control ───────────────────────
+    // ─────────────────────── Service Control ─────────────────────
 
     private void startTranslation() {
         String[] srcCodes = getResources().getStringArray(R.array.source_lang_codes);
@@ -175,7 +200,10 @@ public class MainActivity extends AppCompatActivity {
         String src = srcCodes[spinnerSource.getSelectedItemPosition()];
         String tgt = tgtCodes[spinnerTarget.getSelectedItemPosition()];
 
-        getPrefs().edit().putString(KEY_SOURCE_LANG, src).putString(KEY_TARGET_LANG, tgt).apply();
+        getPrefs().edit()
+            .putString(KEY_SOURCE_LANG, src)
+            .putString(KEY_TARGET_LANG, tgt)
+            .apply();
 
         Intent i = new Intent(this, SubtitleService.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
@@ -185,7 +213,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatus.setText("🟢 الترجمة شغالة — ارجع للفيديو");
         btnStart.setEnabled(false); btnStart.setAlpha(0.4f);
         btnStop.setEnabled(true);  btnStop.setAlpha(1f);
-        Toast.makeText(this, "شغّال ✅ ارجع للفيديو أو التطبيق", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "شغّال ✅ ارجع للفيديو", Toast.LENGTH_SHORT).show();
     }
 
     private void stopTranslation() {
@@ -197,7 +225,7 @@ public class MainActivity extends AppCompatActivity {
         updateStatus();
     }
 
-    // ─────────────────────── Dialogs ───────────────────────
+    // ─────────────────────── Dialogs ─────────────────────────────
 
     private void showPermissionsDialog() {
         View v = LayoutInflater.from(this).inflate(R.layout.dialog_permissions, null);
@@ -217,7 +245,8 @@ public class MainActivity extends AppCompatActivity {
         Button   btnLater = v.findViewById(R.id.btnRemindLater);
 
         long mins = userManager.getRemainingTime() / 60000;
-        msg.setText("استخدمت 30 دقيقة اليوم.\nمتبقي: " + mins + " دقيقة\n\nرقِّ للاستمرار بدون حدود!");
+        msg.setText("استخدمت 30 دقيقة اليوم.\nمتبقي: " + mins
+            + " دقيقة\n\nرقِّ للاستمرار بدون حدود!");
 
         AlertDialog dlg = new AlertDialog.Builder(this).setView(v).create();
         btnPlus.setOnClickListener(x -> {
@@ -232,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
         dlg.show();
     }
 
-    // ─────────────────────── Status ───────────────────────
+    // ─────────────────────── Status ──────────────────────────────
 
     private void updateStatus() {
         if (userManager.isSubscribed()) {
@@ -241,11 +270,12 @@ public class MainActivity extends AppCompatActivity {
         } else {
             long mins = userManager.getRemainingTime() / 60000;
             tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة اليوم");
-            tvRemainingTime.setTextColor(mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+            tvRemainingTime.setTextColor(
+                mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
         }
     }
 
-    // ─────────────────────── Helpers ───────────────────────
+    // ─────────────────────── Helpers ─────────────────────────────
 
     private SharedPreferences getPrefs() {
         return getSharedPreferences(PREFS, MODE_PRIVATE);
