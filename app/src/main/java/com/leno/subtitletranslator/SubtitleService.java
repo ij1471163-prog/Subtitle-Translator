@@ -36,7 +36,7 @@ public class SubtitleService extends Service {
     private DeepgramEngine deepgram;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
-    private boolean running=false;
+    private volatile boolean running=false;
     private String sourceLang="en-US",targetLang="ar";
     private final BroadcastReceiver screenOff=new BroadcastReceiver(){
         @Override public void onReceive(Context c,Intent i){
@@ -45,7 +45,6 @@ public class SubtitleService extends Service {
     };
     @Override public void onCreate(){
         super.onCreate();
-        Log.d(TAG,"onCreate");
         SharedPreferences p=getSharedPreferences(MainActivity.PREFS,MODE_PRIVATE);
         sourceLang=p.getString(MainActivity.KEY_SOURCE_LANG,"en-US");
         targetLang=p.getString(MainActivity.KEY_TARGET_LANG,"ar");
@@ -57,44 +56,43 @@ public class SubtitleService extends Service {
         startForeground(NOTIF_ID,buildNotif());
         addOverlay();
         running=true;
-        startCapture();
-    }
-    private void startCapture(){
         deepgram=new DeepgramEngine();
-        deepgram.start(text->{
-            Log.d(TAG,"Deepgram: "+text);
-            TranslationHelper.translateAsync(text,sourceLang,targetLang,t->showOverlay(t));
+        deepgram.start(BuildConfig.DEEPGRAM_KEY,transcript->{
+            TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
         });
+        startAudioCapture();
+    }
+    private void startAudioCapture(){
         Intent proj=MainActivity.getProjectionData();
         if(AudioCaptureService.isSupported()&&proj!=null){
             audioCapture=new AudioCaptureService();
             boolean ok=audioCapture.onActivityResult(null,android.app.Activity.RESULT_OK,proj);
-            Log.d(TAG,"playback init="+ok);
             if(ok){
-                boolean started=audioCapture.startCapture((data,len)->{
-                    deepgram.sendAudio(data,len);
-                });
-                Log.d(TAG,"playback started="+started);
+                boolean started=audioCapture.startCapture((data,len)->deepgram.sendAudio(data,len));
                 if(started){showOverlay("يلتقط صوت الفيديو");return;}
             }
         }
-        Log.d(TAG,"fallback to mic");
         startMic();
     }
     private void startMic(){
         int buf=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
         micRecord=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buf*4);
-        if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){Log.e(TAG,"mic init failed");return;}
+        if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
         micRecord.startRecording();
         showOverlay("يستمع بالميكروفون");
-        new Thread(()->{
-            short[]b=new short[buf];
-            while(running){
-                int r=micRecord.read(b,0,b.length);
-                if(r>0)deepgram.sendAudio(b,r);
-            }
-        },"MicThread").start();
+        new Thread(()->{short[]b=new short[buf];while(running){int r=micRecord.read(b,0,b.length);if(r>0)deepgram.sendAudio(b,r);}},"MicThread").start();
     }
+    private void addOverlay(){
+        wm=(WindowManager)getSystemService(WINDOW_SERVICE);
+        overlay=new TextView(this);
+        overlay.setTextColor(Color.WHITE);overlay.setTextSize(18f);overlay.setGravity(Gravity.CENTER);
+        overlay.setShadowLayer(8f,0f,2f,Color.BLACK);overlay.setBackgroundColor(Color.TRANSPARENT);
+        overlay.setPadding(20,8,20,8);overlay.setMaxLines(2);
+        int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
+        WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
+        lp.gravity=Gravity.BOTTOM;lp.y=120;wm.addView(overlay,lp);
+    }
+    private void showOverlay(String t){handler.post(()->{if(overlay!=null)overlay.setText(t);});}
     @Override public int onStartCommand(Intent i,int f,int id){
         if(i!=null&&ACTION_STOP.equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
         return START_STICKY;
@@ -103,24 +101,13 @@ public class SubtitleService extends Service {
         running=false;
         if(deepgram!=null)deepgram.stop();
         if(audioCapture!=null)audioCapture.stop();
-        if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception e){}}
+        if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
         if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
-        if(wm!=null&&overlay!=null){try{wm.removeView(overlay);}catch(Exception e){}}
-        try{unregisterReceiver(screenOff);}catch(Exception e){}
+        if(wm!=null&&overlay!=null){try{wm.removeView(overlay);}catch(Exception ignored){}}
+        try{unregisterReceiver(screenOff);}catch(Exception ignored){}
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent i){return null;}
-    private void addOverlay(){
-        wm=(WindowManager)getSystemService(WINDOW_SERVICE);
-        overlay=new TextView(this);
-        overlay.setTextColor(Color.WHITE);overlay.setTextSize(18f);
-        overlay.setGravity(Gravity.CENTER);overlay.setShadowLayer(8f,0f,2f,Color.BLACK);
-        overlay.setBackgroundColor(Color.TRANSPARENT);overlay.setPadding(20,8,20,8);overlay.setMaxLines(2);
-        int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
-        WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
-        lp.gravity=Gravity.BOTTOM;lp.y=120;wm.addView(overlay,lp);
-    }
-    private void showOverlay(String t){handler.post(()->{if(overlay!=null)overlay.setText(t);});}
     private void createChannel(){
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
             NotificationChannel c=new NotificationChannel(CHANNEL_ID,"الترجمة",NotificationManager.IMPORTANCE_LOW);
