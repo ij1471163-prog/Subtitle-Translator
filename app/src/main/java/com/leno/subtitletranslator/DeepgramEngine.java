@@ -8,7 +8,7 @@ import okhttp3.*;
 import okio.ByteString;
 public class DeepgramEngine {
     private static final String TAG="DeepgramEngine";
-    private static final String WS_URL="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=false";
+    private static final String WS_URL="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&utterance_end_ms=1000";
     public interface ResultCallback{void onResult(String text);}
     private OkHttpClient client;
     private WebSocket webSocket;

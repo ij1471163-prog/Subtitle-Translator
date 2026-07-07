@@ -58,6 +58,7 @@ public class SubtitleService extends Service {
         running=true;
         deepgram=new DeepgramEngine();
         deepgram.start(BuildConfig.DEEPGRAM_KEY,transcript->{
+            showOverlay(transcript);
             TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
         });
         startAudioCapture();
