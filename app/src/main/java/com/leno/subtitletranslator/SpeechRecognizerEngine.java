@@ -1,4 +1,4 @@
-package com.leno.subtitletranslator.speech;
+package com.leno.subtitletranslator;
 
 import android.content.Context;
 import android.content.Intent;

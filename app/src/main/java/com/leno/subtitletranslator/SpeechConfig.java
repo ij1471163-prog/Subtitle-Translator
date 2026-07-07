@@ -1,4 +1,4 @@
-package com.leno.subtitletranslator.speech;
+package com.leno.subtitletranslator;
 
 /**
  * SpeechConfig — إعدادات محرك التعرف على الكلام.

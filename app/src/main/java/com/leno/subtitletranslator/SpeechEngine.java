@@ -1,4 +1,4 @@
-package com.leno.subtitletranslator.speech;
+package com.leno.subtitletranslator;
 
 /**
  * SpeechEngine — Interface رئيسي لمحرك التعرف على الكلام.

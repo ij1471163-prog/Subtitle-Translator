@@ -23,10 +23,6 @@ import android.widget.TextView;
 
 import androidx.core.app.NotificationCompat;
 
-import com.leno.subtitletranslator.speech.SpeechConfig;
-import com.leno.subtitletranslator.speech.SpeechEngine;
-import com.leno.subtitletranslator.speech.SpeechListener;
-import com.leno.subtitletranslator.speech.SpeechRecognizerEngine;
 
 /**
  * SubtitleService — قلب التطبيق.

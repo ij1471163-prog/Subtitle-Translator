@@ -1,4 +1,4 @@
-package com.leno.subtitletranslator.speech;
+package com.leno.subtitletranslator;
 
 /**
  * SpeechListener — Callback لاستقبال نتائج التعرف على الكلام.
