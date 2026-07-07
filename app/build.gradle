@@ -3,10 +3,14 @@ plugins {
 }
 
 android {
+    buildFeatures {
+        buildConfig = true
+    }
     namespace 'com.leno.subtitletranslator'
     compileSdk 34
 
     defaultConfig {
+        buildConfigField "String", "DEEPGRAM_KEY", "\"4220c96edf78e32873705492bf32091a84a50353\""
         applicationId "com.leno.subtitletranslator"
         minSdk 26
         targetSdk 34
@@ -33,6 +37,7 @@ android {
 }
 
 dependencies {
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.cardview:cardview:1.0.0'

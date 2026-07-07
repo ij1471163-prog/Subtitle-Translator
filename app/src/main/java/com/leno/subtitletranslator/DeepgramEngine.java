@@ -1,106 +1,57 @@
 package com.leno.subtitletranslator;
-
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import org.json.JSONObject;
-import java.io.OutputStream;
-import java.net.URI;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-/**
- * DeepgramEngine — يرسل PCM مباشرة لـ Deepgram عبر HTTP streaming
- * بدون WebSocket library إضافية
- */
+import java.util.concurrent.TimeUnit;
+import okhttp3.*;
+import okio.ByteString;
 public class DeepgramEngine {
-
-    private static final String TAG = "DeepgramEngine";
-    private static final String API_KEY = "4220c96edf78e32873705492bf32091a84a50353"; // غيّر هذا
-    private static final String URL = "https://api.deepgram.com/v1/listen"
-        + "?encoding=linear16&sample_rate=16000&channels=1&language=en&punctuate=true";
-
-    public interface ResultCallback {
-        void onResult(String text);
+    private static final String TAG="DeepgramEngine";
+    private static final String WS_URL="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=false";
+    public interface ResultCallback{void onResult(String text);}
+    private OkHttpClient client;
+    private WebSocket webSocket;
+    private volatile boolean connected=false,reconnect=true,ready=false;
+    private ResultCallback callback;
+    private String apiKey;
+    public void start(String key,ResultCallback cb){
+        this.apiKey=key;this.callback=cb;this.reconnect=true;
+        client=new OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(0,TimeUnit.SECONDS).pingInterval(20,TimeUnit.SECONDS).build();
+        connect();
     }
-
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private volatile boolean running = false;
-    private OutputStream outputStream;
-    private HttpURLConnection connection;
-
-    public void start(ResultCallback callback) {
-        running = true;
-        executor.execute(() -> {
-            try {
-                URL url = new URL(URL);
-                connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("Authorization", "Token " + API_KEY);
-                connection.setRequestProperty("Content-Type", "audio/raw");
-                connection.setDoOutput(true);
-                connection.setDoInput(true);
-                connection.setChunkedStreamingMode(4096);
-                connection.connect();
-
-                outputStream = connection.getOutputStream();
-                Log.d(TAG, "✅ Connected to Deepgram");
-
-                // اقرأ الرد في thread ثاني
-                new Thread(() -> {
-                    try {
-                        java.io.BufferedReader reader = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(connection.getInputStream()));
-                        String line;
-                        while (running && (line = reader.readLine()) != null) {
-                            if (!line.isEmpty()) {
-                                try {
-                                    JSONObject json = new JSONObject(line);
-                                    String transcript = json
-                                        .getJSONArray("results")
-                                        .getJSONObject(0)
-                                        .getJSONArray("alternatives")
-                                        .getJSONObject(0)
-                                        .getString("transcript");
-                                    if (!transcript.isEmpty()) {
-                                        Log.d(TAG, "Result: " + transcript);
-                                        callback.onResult(transcript);
-                                    }
-                                } catch (Exception ignored) {}
-                            }
-                        }
-                    } catch (Exception e) {
-                        Log.e(TAG, "Reader error: " + e.getMessage());
-                    }
-                }).start();
-
-            } catch (Exception e) {
-                Log.e(TAG, "Connection error: " + e.getMessage());
+    private void connect(){
+        if(!reconnect)return;
+        ready=false;
+        Request req=new Request.Builder().url(WS_URL).header("Authorization","Token "+apiKey).build();
+        webSocket=client.newWebSocket(req,new WebSocketListener(){
+            @Override public void onOpen(WebSocket ws,Response r){connected=true;ready=true;Log.d(TAG,"✅ Connected");}
+            @Override public void onMessage(WebSocket ws,String text){
+                try{
+                    JSONObject j=new JSONObject(text);
+                    if(!j.has("channel"))return;
+                    String t=j.getJSONObject("channel").getJSONArray("alternatives").getJSONObject(0).getString("transcript");
+                    if(!t.isEmpty()&&callback!=null){Log.d(TAG,"transcript: "+t);callback.onResult(t);}
+                }catch(Exception e){Log.w(TAG,"parse: "+e.getMessage());}
             }
+            @Override public void onFailure(WebSocket ws,Throwable t,Response r){
+                connected=false;ready=false;Log.e(TAG,"failure: "+t.getMessage());
+                if(r!=null&&r.code()==401){reconnect=false;Log.e(TAG,"Invalid API Key");return;}
+                if(reconnect)new Handler(Looper.getMainLooper()).postDelayed(()->connect(),3000);
+            }
+            @Override public void onClosed(WebSocket ws,int code,String reason){connected=false;ready=false;Log.d(TAG,"closed: "+reason);}
         });
     }
-
-    public void sendAudio(short[] data, int length) {
-        if (!running || outputStream == null) return;
-        executor.execute(() -> {
-            try {
-                byte[] bytes = new byte[length * 2];
-                for (int i = 0; i < length; i++) {
-                    bytes[i * 2]     = (byte) (data[i] & 0xFF);
-                    bytes[i * 2 + 1] = (byte) ((data[i] >> 8) & 0xFF);
-                }
-                outputStream.write(bytes);
-                outputStream.flush();
-            } catch (Exception e) {
-                Log.e(TAG, "Send error: " + e.getMessage());
-            }
-        });
+    public void sendAudio(short[]data,int len){
+        if(!connected||!ready||webSocket==null)return;
+        byte[]pcm=new byte[len*2];
+        for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
+        boolean ok=webSocket.send(ByteString.of(pcm));
+        if(!ok)Log.e(TAG,"send failed");
     }
-
-    public void stop() {
-        running = false;
-        try { if (outputStream != null) outputStream.close(); } catch (Exception ignored) {}
-        try { if (connection != null) connection.disconnect(); } catch (Exception ignored) {}
-        executor.shutdown();
+    public void stop(){
+        reconnect=false;connected=false;ready=false;
+        if(webSocket!=null){try{webSocket.send("{\"type\":\"CloseStream\"}");}catch(Exception ignored){}webSocket.close(1000,"done");}
+        if(client!=null){client.connectionPool().evictAll();client.dispatcher().executorService().shutdown();}
     }
 }
