@@ -12,16 +12,13 @@ import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
- * محرك ترجمة متقدم:
- * ✓ Buffering ذكي — تجميع النصوص لـ 150ms قبل الترجمة (أقل API calls)
- * ✓ Fallback ثنائي — MyMemory أولاً + Google Translate كبديل
+ * محرك ترجمة:
+ * ✓ بدون Buffer داخلي — التجميع مسؤولية SubtitleService فقط (منع التجميع المزدوج)
+ * ✓ Fallback ثنائي — MyMemory أولاً + LibreTranslate كبديل
  * ✓ Retry Logic — إعادة محاولة تلقائية مع backoff
- * ✓ Cache LRU — آخر 500 ترجمة
+ * ✓ Cache LRU — آخر 500 ترجمة (ناجحة فقط)
  * ✓ Rate Limit Handling — كشف انقطاع الخدمة تلقائي
  * ✓ Thread-safe — آمن للاستخدام من عدة threads
  */
@@ -30,26 +27,19 @@ public class TranslationHelper {
     private static final String TAG = "TranslationHelper";
 
     // ===================== Configuration =====================
-    private static final int BUFFER_TIME_MS = 150;           // تجميع النصوص لـ 150ms
-    private static final int CACHE_SIZE = 500;               // أكبر 500 ترجمة
-    private static final int CONNECT_TIMEOUT_MS = 3000;      // 3 ثواني اتصال
-    private static final int READ_TIMEOUT_MS = 5000;         // 5 ثواني قراءة
+    private static final int CACHE_SIZE = 500;
+    private static final int CONNECT_TIMEOUT_MS = 3000;
+    private static final int READ_TIMEOUT_MS = 5000;
     private static final int MAX_RETRIES = 2;
     private static final int INITIAL_BACKOFF_MS = 100;
 
-    // ===================== Cache & Buffer =====================
+    // ===================== Cache =====================
     private static final Map<String, String> cache = new LinkedHashMap<String, String>(CACHE_SIZE, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
             return size() > CACHE_SIZE;
         }
     };
-
-    private static volatile String pendingText = "";
-    private static volatile long lastBufferTime = 0;
-    private static final Object bufferLock = new Object();
-    private static final ScheduledExecutorService bufferExecutor = Executors.newScheduledThreadPool(1);
-    private static volatile boolean translationScheduled = false;
 
     // Rate limiting detection
     private static final Map<String, Long> rateLimitTracker = new ConcurrentHashMap<>();
@@ -61,33 +51,10 @@ public class TranslationHelper {
             callback.onResult("");
             return;
         }
-
-        // أضف للـ buffer
-        synchronized (bufferLock) {
-            pendingText = (pendingText.isEmpty() ? "" : pendingText + " ") + text.trim();
-            lastBufferTime = System.currentTimeMillis();
-
-            // جدول الترجمة بعد BUFFER_TIME_MS لو لم تكن مجدولة
-            if (!translationScheduled) {
-                translationScheduled = true;
-                bufferExecutor.schedule(() -> {
-                    String toTranslate;
-                    synchronized (bufferLock) {
-                        toTranslate = pendingText;
-                        pendingText = "";
-                        translationScheduled = false;
-                    }
-                    if (!toTranslate.isEmpty()) {
-                        performTranslation(toTranslate, sourceLangCode, targetLangCode, callback);
-                    }
-                }, BUFFER_TIME_MS, TimeUnit.MILLISECONDS);
-            }
-        }
-    }
-
-    private static void performTranslation(String text, String sourceLangCode, String targetLangCode, TranslationCallback callback) {
+        // يترجم مباشرة بدون أي buffer إضافي — التجميع مسؤولية الطرف المستدعي (SubtitleService)
+        final String toTranslate = text.trim();
         new Thread(() -> {
-            String result = translate(text, sourceLangCode, targetLangCode);
+            String result = translate(toTranslate, sourceLangCode, targetLangCode);
             callback.onResult(result);
         }).start();
     }
@@ -139,13 +106,13 @@ public class TranslationHelper {
             }
         }
 
-        // 4️⃣ Fallback نهائي: النص الأصلي
+        // 4️⃣ فشل كل المزودين: لا تُرجع النص الأصلي إطلاقًا، ولا تُخزّن أي شيء بالـ Cache.
         if (result == null || result.isEmpty()) {
-            result = text;
-            Log.w(TAG, "All translation services failed, returning original");
+            Log.w(TAG, "All translation services failed, returning empty result");
+            return "";
         }
 
-        // 5️⃣ احفظ في الـ Cache
+        // 5️⃣ احفظ في الـ Cache — فقط للترجمات الناجحة (غير فارغة)
         synchronized (cache) {
             cache.put(cacheKey, result);
         }

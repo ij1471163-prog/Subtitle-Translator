@@ -29,8 +29,8 @@ public class SubtitleService extends Service {
     private static final String CHANNEL_ID="subtitle_ch";
     private static final int NOTIF_ID=1001;
     public static final String ACTION_STOP="com.leno.subtitletranslator.STOP";
-    private static final long TRANSLATION_DELAY_MS=700;
-    private static final long MIN_DISPLAY_MS=2500;
+    private static final long TRANSLATION_DELAY_MS=550;
+    private static final long MIN_DISPLAY_MS=1900;
     private WindowManager wm;
     private TextView overlay;
     private AudioRecord micRecord;
@@ -88,8 +88,14 @@ public class SubtitleService extends Service {
         final long mySeq=++seqCounter;
         TranslationHelper.translateAsync(text,sourceLang,targetLang,t->handler.post(()->applyTranslation(t,mySeq)));
     }
+    /**
+     * يُطبَّق فقط لو الرد فعلاً أحدث طلب أُرسل (مو أحدث طلب وصل).
+     * أي رد قديم متأخر عن رد أحدث سبق تطبيقه يُتجاهل تلقائياً — هذا يمنع استبدال
+     * الترجمة الصحيحة بترجمة أقدم وصلت متأخرة بسبب اختلاف زمن الشبكة/الـ cache.
+     */
     private void applyTranslation(String text,long seq){
         if(seq<=latestAppliedSeq)return;
+        if(text==null||text.trim().isEmpty())return; // فشل الترجمة: لا تمسح آخر نص عربي صحيح
         latestAppliedSeq=seq;
         if(pendingDisplayRunnable!=null){handler.removeCallbacks(pendingDisplayRunnable);pendingDisplayRunnable=null;}
         long elapsed=System.currentTimeMillis()-lastShownAt;
