@@ -30,8 +30,13 @@ public class DeepgramEngine {
                 try{
                     JSONObject j=new JSONObject(text);
                     if(!j.has("channel"))return;
-                    String t=j.getJSONObject("channel").getJSONArray("alternatives").getJSONObject(0).getString("transcript");
-                    if(!t.isEmpty()&&callback!=null){Log.d(TAG,"transcript: "+t);callback.onResult(t);}
+                    boolean isFinal=j.optBoolean("is_final",false);
+                    if(!isFinal)return;
+                    JSONObject channel=j.getJSONObject("channel");
+                    if(channel.getJSONArray("alternatives").length()==0)return;
+                    String t=channel.getJSONArray("alternatives").getJSONObject(0).optString("transcript","");
+                    if(t.trim().isEmpty())return;
+                    if(callback!=null){Log.d(TAG,"transcript(final): "+t);callback.onResult(t);}
                 }catch(Exception e){Log.w(TAG,"parse: "+e.getMessage());}
             }
             @Override public void onFailure(WebSocket ws,Throwable t,Response r){
