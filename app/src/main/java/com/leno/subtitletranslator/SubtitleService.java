@@ -29,13 +29,22 @@ public class SubtitleService extends Service {
     private static final String CHANNEL_ID="subtitle_ch";
     private static final int NOTIF_ID=1001;
     public static final String ACTION_STOP="com.leno.subtitletranslator.STOP";
+    private static final long TRANSLATION_DELAY_MS=700;
+    private static final long MIN_DISPLAY_MS=2500;
     private WindowManager wm;
     private TextView overlay;
     private AudioRecord micRecord;
     private AudioCaptureService audioCapture;
+    private AudioProcessor micProcessor;
     private DeepgramEngine deepgram;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
+    private final StringBuilder pendingTranscript=new StringBuilder();
+    private Runnable flushRunnable;
+    private Runnable pendingDisplayRunnable;
+    private long seqCounter=0;
+    private long latestAppliedSeq=0;
+    private long lastShownAt=0;
     private volatile boolean running=false;
     private String sourceLang="en-US",targetLang="ar";
     private final BroadcastReceiver screenOff=new BroadcastReceiver(){
@@ -57,11 +66,45 @@ public class SubtitleService extends Service {
         addOverlay();
         running=true;
         deepgram=new DeepgramEngine();
-        deepgram.start(BuildConfig.DEEPGRAM_KEY,transcript->{
-            showOverlay(transcript);
-            TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
-        });
+        deepgram.start(BuildConfig.DEEPGRAM_KEY,transcript->handleTranscript(transcript));
         startAudioCapture();
+    }
+    private void handleTranscript(String transcript){
+        synchronized(pendingTranscript){
+            if(pendingTranscript.length()>0)pendingTranscript.append(" ");
+            pendingTranscript.append(transcript);
+        }
+        if(flushRunnable!=null)handler.removeCallbacks(flushRunnable);
+        flushRunnable=this::flushTranslation;
+        handler.postDelayed(flushRunnable,TRANSLATION_DELAY_MS);
+    }
+    private void flushTranslation(){
+        String text;
+        synchronized(pendingTranscript){
+            text=pendingTranscript.toString();
+            pendingTranscript.setLength(0);
+        }
+        if(text.isEmpty())return;
+        final long mySeq=++seqCounter;
+        TranslationHelper.translateAsync(text,sourceLang,targetLang,t->handler.post(()->applyTranslation(t,mySeq)));
+    }
+    private void applyTranslation(String text,long seq){
+        if(seq<=latestAppliedSeq)return;
+        latestAppliedSeq=seq;
+        if(pendingDisplayRunnable!=null){handler.removeCallbacks(pendingDisplayRunnable);pendingDisplayRunnable=null;}
+        long elapsed=System.currentTimeMillis()-lastShownAt;
+        if(elapsed>=MIN_DISPLAY_MS){
+            if(overlay!=null)overlay.setText(text);
+            lastShownAt=System.currentTimeMillis();
+        } else {
+            long wait=MIN_DISPLAY_MS-elapsed;
+            pendingDisplayRunnable=()->{
+                if(overlay!=null)overlay.setText(text);
+                lastShownAt=System.currentTimeMillis();
+                pendingDisplayRunnable=null;
+            };
+            handler.postDelayed(pendingDisplayRunnable,wait);
+        }
     }
     private void startAudioCapture(){
         Intent proj=MainActivity.getProjectionData();
@@ -79,9 +122,11 @@ public class SubtitleService extends Service {
         int buf=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
         micRecord=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buf*4);
         if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
+        micProcessor=new AudioProcessor();
+        micProcessor.attachEffects(micRecord.getAudioSessionId());
         micRecord.startRecording();
         showOverlay("يستمع بالميكروفون");
-        new Thread(()->{short[]b=new short[buf];while(running){int r=micRecord.read(b,0,b.length);if(r>0)deepgram.sendAudio(b,r);}},"MicThread").start();
+        new Thread(()->{short[]b=new short[buf];while(running){int r=micRecord.read(b,0,b.length);if(r>0&&micProcessor.normalizeAndDetectVoice(b,r))deepgram.sendAudio(b,r);}},"MicThread").start();
     }
     private void addOverlay(){
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
@@ -100,8 +145,11 @@ public class SubtitleService extends Service {
     }
     @Override public void onDestroy(){
         running=false;
+        if(flushRunnable!=null)handler.removeCallbacks(flushRunnable);
+        if(pendingDisplayRunnable!=null)handler.removeCallbacks(pendingDisplayRunnable);
         if(deepgram!=null)deepgram.stop();
         if(audioCapture!=null)audioCapture.stop();
+        if(micProcessor!=null)micProcessor.releaseEffects();
         if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
         if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
         if(wm!=null&&overlay!=null){try{wm.removeView(overlay);}catch(Exception ignored){}}
