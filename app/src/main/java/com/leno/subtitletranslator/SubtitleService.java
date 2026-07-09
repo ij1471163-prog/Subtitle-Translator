@@ -36,6 +36,7 @@ public class SubtitleService extends Service {
     private AudioRecord micRecord;
     private AudioCaptureService audioCapture;
     private AudioProcessor micProcessor;
+    private SmartSleepManager micSleepManager;
     private DeepgramEngine deepgram;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -88,14 +89,9 @@ public class SubtitleService extends Service {
         final long mySeq=++seqCounter;
         TranslationHelper.translateAsync(text,sourceLang,targetLang,t->handler.post(()->applyTranslation(t,mySeq)));
     }
-    /**
-     * يُطبَّق فقط لو الرد فعلاً أحدث طلب أُرسل (مو أحدث طلب وصل).
-     * أي رد قديم متأخر عن رد أحدث سبق تطبيقه يُتجاهل تلقائياً — هذا يمنع استبدال
-     * الترجمة الصحيحة بترجمة أقدم وصلت متأخرة بسبب اختلاف زمن الشبكة/الـ cache.
-     */
     private void applyTranslation(String text,long seq){
         if(seq<=latestAppliedSeq)return;
-        if(text==null||text.trim().isEmpty())return; // فشل الترجمة: لا تمسح آخر نص عربي صحيح
+        if(text==null||text.trim().isEmpty())return;
         latestAppliedSeq=seq;
         if(pendingDisplayRunnable!=null){handler.removeCallbacks(pendingDisplayRunnable);pendingDisplayRunnable=null;}
         long elapsed=System.currentTimeMillis()-lastShownAt;
@@ -130,9 +126,24 @@ public class SubtitleService extends Service {
         if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
         micProcessor=new AudioProcessor();
         micProcessor.attachEffects(micRecord.getAudioSessionId());
+        micSleepManager=new SmartSleepManager();
         micRecord.startRecording();
         showOverlay("يستمع بالميكروفون");
-        new Thread(()->{short[]b=new short[buf];while(running){int r=micRecord.read(b,0,b.length);if(r>0&&micProcessor.normalizeAndDetectVoice(b,r))deepgram.sendAudio(b,r);}},"MicThread").start();
+        new Thread(()->{
+            short[]b=new short[buf];
+            while(running){
+                int r=micRecord.read(b,0,b.length);
+                if(r>0){
+                    if(micSleepManager.shouldProcess()){
+                        boolean voice=micProcessor.normalizeAndDetectVoice(b,r);
+                        micSleepManager.reportFrame(voice);
+                        if(voice)deepgram.sendAudio(b,r);
+                    }else{
+                        micSleepManager.reportSkipped();
+                    }
+                }
+            }
+        },"MicThread").start();
     }
     private void addOverlay(){
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
