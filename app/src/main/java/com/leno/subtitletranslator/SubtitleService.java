@@ -37,7 +37,6 @@ public class SubtitleService extends Service {
     private AudioCaptureService audioCapture;
     private AudioProcessor micProcessor;
     private SmartSleepManager micSleepManager;
-    private DeepgramEngine deepgram;
     private NetlifySTTEngine netlifyEngine;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
@@ -71,7 +70,6 @@ public class SubtitleService extends Service {
         netlifyEngine.start(sourceLang,transcript->{
             TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
         });
-        deepgram.start(BuildConfig.DEEPGRAM_KEY,sourceLang,transcript->handleTranscript(transcript));
         startAudioCapture();
     }
     private void handleTranscript(String transcript){
@@ -168,7 +166,6 @@ public class SubtitleService extends Service {
         running=false;
         if(flushRunnable!=null)handler.removeCallbacks(flushRunnable);
         if(pendingDisplayRunnable!=null)handler.removeCallbacks(pendingDisplayRunnable);
-        if(deepgram!=null)deepgram.stop();
         if(netlifyEngine!=null)netlifyEngine.stop();
         if(audioCapture!=null)audioCapture.stop();
         if(micProcessor!=null)micProcessor.releaseEffects();
