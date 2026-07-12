@@ -39,6 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private Button      btnStart, btnStop;
     private ProgressBar progressBar;
     private UserManager userManager;
+    private BillingManager billingManager;
 
     // ── AudioPlaybackCapture ─────────────────────────────────────
     private static Intent projectionData = null;
@@ -51,6 +52,18 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         userManager = new UserManager(this);
+        billingManager = new BillingManager(this, userManager);
+        billingManager.init(new BillingManager.OnBillingListener() {
+            @Override public void onPurchaseSuccess(UserManager.Tier tier) {
+                runOnUiThread(() -> {
+                    updateStatus();
+                    android.widget.Toast.makeText(MainActivity.this, "✅ تم الاشتراك بنجاح!", android.widget.Toast.LENGTH_SHORT).show();
+                });
+            }
+            @Override public void onPurchaseFailed(String msg) {
+                runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, "فشل الشراء", android.widget.Toast.LENGTH_SHORT).show());
+            }
+        });
         initUI();
         if (getPrefs().getBoolean(KEY_FIRST_LAUNCH, true)) {
             showPermissionsDialog();
@@ -250,11 +263,12 @@ public class MainActivity extends AppCompatActivity {
 
         AlertDialog dlg = new AlertDialog.Builder(this).setView(v).create();
         btnPlus.setOnClickListener(x -> {
-            Toast.makeText(this, "قريباً في Google Play!", Toast.LENGTH_SHORT).show();
+            billingManager.launchPurchase(this, UserManager.SKU_PLUS_MONTHLY);
+
             dlg.dismiss();
         });
         btnPrem.setOnClickListener(x -> {
-            Toast.makeText(this, "قريباً في Google Play!", Toast.LENGTH_SHORT).show();
+            billingManager.launchPurchase(this, UserManager.SKU_PLUS_MONTHLY);
             dlg.dismiss();
         });
         btnLater.setOnClickListener(x -> dlg.dismiss());
