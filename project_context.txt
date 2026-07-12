@@ -1,0 +1,1981 @@
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/build.gradle ====================
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.2'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/build.gradle ====================
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    buildFeatures {
+        buildConfig = true
+    }
+    namespace 'com.leno.subtitletranslator'
+    compileSdk 34
+
+    defaultConfig {
+        buildConfigField "String", "DEEPGRAM_KEY", "\"4220c96edf78e32873705492bf32091a84a50353\""
+        applicationId "com.leno.subtitletranslator"
+        minSdk 26
+        targetSdk 34
+        versionCode 2
+        versionName "2.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.core:core:1.12.0'
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/UserManager.java ====================
+package com.leno.subtitletranslator;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+public class UserManager {
+    private static final long FREE_LIMIT_MS = 30 * 60 * 1000L; // 30 دقيقة
+    private final SharedPreferences prefs;
+    private long translationStartTime = 0;
+
+    public UserManager(Context context) {
+        prefs = context.getSharedPreferences("user_data", Context.MODE_PRIVATE);
+    }
+
+    public boolean isSubscribed() {
+        return prefs.getBoolean("is_subscribed", false);
+    }
+
+    public boolean canTranslate() {
+        if (isSubscribed()) return true;
+        resetDailyUsageIfNewDay();
+        return prefs.getLong("daily_usage_ms", 0) < FREE_LIMIT_MS;
+    }
+
+    public void startTranslation() {
+        translationStartTime = System.currentTimeMillis();
+    }
+
+    public void stopTranslation() {
+        if (isSubscribed() || translationStartTime == 0) return;
+        long used = prefs.getLong("daily_usage_ms", 0);
+        long duration = System.currentTimeMillis() - translationStartTime;
+        prefs.edit().putLong("daily_usage_ms", used + duration).apply();
+        translationStartTime = 0;
+    }
+
+    public long getRemainingTime() {
+        if (isSubscribed()) return Long.MAX_VALUE;
+        resetDailyUsageIfNewDay();
+        long used = prefs.getLong("daily_usage_ms", 0);
+        return Math.max(0, FREE_LIMIT_MS - used);
+    }
+
+    private void resetDailyUsageIfNewDay() {
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        String lastDate = prefs.getString("last_usage_date", "");
+        if (!today.equals(lastDate)) {
+            prefs.edit()
+                .putLong("daily_usage_ms", 0)
+                .putString("last_usage_date", today)
+                .apply();
+        }
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/MainActivity.java ====================
+package com.leno.subtitletranslator;
+
+import android.Manifest;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.provider.Settings;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.ProgressBar;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
+public class MainActivity extends AppCompatActivity {
+
+    private static final int REQ_MIC        = 100;
+    private static final int REQ_OVERLAY    = 101;
+    private static final int REQ_NOTIF      = 102;
+
+    public static final String PREFS            = "subtitle_prefs";
+    public static final String KEY_SOURCE_LANG  = "source_lang";
+    public static final String KEY_TARGET_LANG  = "target_lang";
+    public static final String KEY_FIRST_LAUNCH = "first_launch";
+
+    private Spinner     spinnerSource, spinnerTarget;
+    private TextView    tvStatus, tvRemainingTime;
+    private Button      btnStart, btnStop;
+    private ProgressBar progressBar;
+    private UserManager userManager;
+
+    // ── AudioPlaybackCapture ─────────────────────────────────────
+    private static Intent projectionData = null;
+    public static Intent getProjectionData() { return projectionData; }
+
+    // ─────────────────────── Lifecycle ───────────────────────────
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        userManager = new UserManager(this);
+        initUI();
+        if (getPrefs().getBoolean(KEY_FIRST_LAUNCH, true)) {
+            showPermissionsDialog();
+            getPrefs().edit().putBoolean(KEY_FIRST_LAUNCH, false).apply();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateStatus();
+    }
+
+    // ─────────────────────── UI Setup ────────────────────────────
+
+    private void initUI() {
+        spinnerSource   = findViewById(R.id.spinnerSource);
+        spinnerTarget   = findViewById(R.id.spinnerTarget);
+        tvStatus        = findViewById(R.id.tvStatus);
+        tvRemainingTime = findViewById(R.id.tvRemainingTime);
+        btnStart        = findViewById(R.id.btnStart);
+        btnStop         = findViewById(R.id.btnStop);
+        progressBar     = findViewById(R.id.progressBar);
+
+        setupSpinners();
+        btnStart.setOnClickListener(v -> attemptStart());
+        btnStop.setOnClickListener(v -> stopTranslation());
+        btnStop.setEnabled(false);
+        btnStop.setAlpha(0.5f);
+        updateStatus();
+    }
+
+    private void setupSpinners() {
+        ArrayAdapter<CharSequence> src = ArrayAdapter.createFromResource(
+                this, R.array.source_lang_labels, android.R.layout.simple_spinner_item);
+        src.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerSource.setAdapter(src);
+
+        ArrayAdapter<CharSequence> tgt = ArrayAdapter.createFromResource(
+                this, R.array.target_lang_labels, android.R.layout.simple_spinner_item);
+        tgt.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerTarget.setAdapter(tgt);
+
+        restoreSpinner(spinnerSource, R.array.source_lang_codes, KEY_SOURCE_LANG, "en-US");
+        restoreSpinner(spinnerTarget, R.array.target_lang_codes, KEY_TARGET_LANG, "ar");
+    }
+
+    private void restoreSpinner(Spinner spinner, int arrayRes, String prefKey, String def) {
+        String saved = getPrefs().getString(prefKey, def);
+        String[] codes = getResources().getStringArray(arrayRes);
+        for (int i = 0; i < codes.length; i++) {
+            if (codes[i].equals(saved)) { spinner.setSelection(i); break; }
+        }
+    }
+
+    // ─────────────────────── Permission Flow ─────────────────────
+
+    private void attemptStart() {
+        if (!userManager.canTranslate()) { showUpgradeDialog(); return; }
+
+        // 1. Overlay
+        if (!Settings.canDrawOverlays(this)) {
+            new AlertDialog.Builder(this)
+                .setTitle("📺 صلاحية مطلوبة")
+                .setMessage("علشان نعرض الترجمة فوق الفيديو، فعّل \"العرض فوق التطبيقات\"")
+                .setPositiveButton("تفعيل", (d, w) -> startActivityForResult(
+                    new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:" + getPackageName())), REQ_OVERLAY))
+                .setNegativeButton("لاحقاً", null)
+                .show();
+            return;
+        }
+
+        // 2. Microphone
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this,
+                    Manifest.permission.RECORD_AUDIO)) {
+                new AlertDialog.Builder(this)
+                    .setTitle("🎤 صلاحية الميكروفون")
+                    .setMessage("التطبيق يحتاج الميكروفون علشان يسمع الصوت ويترجمه")
+                    .setPositiveButton("السماح", (d, w) ->
+                        ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC))
+                    .setNegativeButton("لاحقاً", null)
+                    .show();
+            } else {
+                ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            }
+            return;
+        }
+
+        // 3. Notifications (API 33+)
+        if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIF);
+            return;
+        }
+
+        // 4. AudioPlaybackCapture (Android 10+)
+        if (AudioCaptureService.isSupported() && projectionData == null) {
+            new AlertDialog.Builder(this)
+                .setTitle("🎬 التقاط صوت الفيديو")
+                .setMessage("علشان يترجم صوت الفيديو مباشرة، اضغط ابدأ الآن")
+                .setPositiveButton("ابدأ", (d, w) ->
+                    AudioCaptureService.requestPermission(this))
+                .setNegativeButton("بس الميكروفون", (d, w) -> startTranslation())
+                .show();
+            return;
+        }
+
+        startTranslation();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] grants) {
+        super.onRequestPermissionsResult(req, perms, grants);
+        if (grants.length > 0 && grants[0] == PackageManager.PERMISSION_GRANTED) {
+            attemptStart();
+        } else {
+            Toast.makeText(this, "الصلاحية مطلوبة لتشغيل الترجمة", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == REQ_OVERLAY && Settings.canDrawOverlays(this)) {
+            attemptStart();
+        } else if (req == AudioCaptureService.REQUEST_CODE) {
+            // استقبل إذن Playback Capture
+            if (res == RESULT_OK) {
+                projectionData = data;
+            }
+            startTranslation();
+        }
+    }
+
+    // ─────────────────────── Service Control ─────────────────────
+
+    private void startTranslation() {
+        String[] srcCodes = getResources().getStringArray(R.array.source_lang_codes);
+        String[] tgtCodes = getResources().getStringArray(R.array.target_lang_codes);
+        String src = srcCodes[spinnerSource.getSelectedItemPosition()];
+        String tgt = tgtCodes[spinnerTarget.getSelectedItemPosition()];
+
+        getPrefs().edit()
+            .putString(KEY_SOURCE_LANG, src)
+            .putString(KEY_TARGET_LANG, tgt)
+            .apply();
+
+        Intent i = new Intent(this, SubtitleService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+        else startService(i);
+
+        userManager.startTranslation();
+        tvStatus.setText("🟢 الترجمة شغالة — ارجع للفيديو");
+        btnStart.setEnabled(false); btnStart.setAlpha(0.4f);
+        btnStop.setEnabled(true);  btnStop.setAlpha(1f);
+        Toast.makeText(this, "شغّال ✅ ارجع للفيديو", Toast.LENGTH_SHORT).show();
+    }
+
+    private void stopTranslation() {
+        stopService(new Intent(this, SubtitleService.class));
+        userManager.stopTranslation();
+        tvStatus.setText("⭕ متوقف");
+        btnStart.setEnabled(true); btnStart.setAlpha(1f);
+        btnStop.setEnabled(false); btnStop.setAlpha(0.4f);
+        updateStatus();
+    }
+
+    // ─────────────────────── Dialogs ─────────────────────────────
+
+    private void showPermissionsDialog() {
+        View v = LayoutInflater.from(this).inflate(R.layout.dialog_permissions, null);
+        new AlertDialog.Builder(this)
+            .setTitle("🔒 صلاحيات التطبيق")
+            .setView(v)
+            .setPositiveButton("فهمت ✅", null)
+            .setCancelable(false)
+            .show();
+    }
+
+    private void showUpgradeDialog() {
+        View v = LayoutInflater.from(this).inflate(R.layout.dialog_upgrade, null);
+        TextView msg      = v.findViewById(R.id.tvUpgradeMessage);
+        Button   btnPlus  = v.findViewById(R.id.btnUpgradePlus);
+        Button   btnPrem  = v.findViewById(R.id.btnUpgradePremium);
+        Button   btnLater = v.findViewById(R.id.btnRemindLater);
+
+        long mins = userManager.getRemainingTime() / 60000;
+        msg.setText("استخدمت 30 دقيقة اليوم.\nمتبقي: " + mins
+            + " دقيقة\n\nرقِّ للاستمرار بدون حدود!");
+
+        AlertDialog dlg = new AlertDialog.Builder(this).setView(v).create();
+        btnPlus.setOnClickListener(x -> {
+            Toast.makeText(this, "قريباً في Google Play!", Toast.LENGTH_SHORT).show();
+            dlg.dismiss();
+        });
+        btnPrem.setOnClickListener(x -> {
+            Toast.makeText(this, "قريباً في Google Play!", Toast.LENGTH_SHORT).show();
+            dlg.dismiss();
+        });
+        btnLater.setOnClickListener(x -> dlg.dismiss());
+        dlg.show();
+    }
+
+    // ─────────────────────── Status ──────────────────────────────
+
+    private void updateStatus() {
+        if (userManager.isSubscribed()) {
+            tvRemainingTime.setText("✨ مشترك — غير محدود");
+            tvRemainingTime.setTextColor(Color.parseColor("#4CAF50"));
+        } else {
+            long mins = userManager.getRemainingTime() / 60000;
+            tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة اليوم");
+            tvRemainingTime.setTextColor(
+                mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+        }
+    }
+
+    // ─────────────────────── Helpers ─────────────────────────────
+
+    private SharedPreferences getPrefs() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/SubtitleService.java ====================
+package com.leno.subtitletranslator;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.util.Log;
+import android.view.Gravity;
+import android.view.WindowManager;
+import android.widget.TextView;
+import androidx.core.app.NotificationCompat;
+public class SubtitleService extends Service {
+    private static final String TAG="SubtitleService";
+    private static final String CHANNEL_ID="subtitle_ch";
+    private static final int NOTIF_ID=1001;
+    public static final String ACTION_STOP="com.leno.subtitletranslator.STOP";
+    private WindowManager wm;
+    private TextView overlay;
+    private AudioRecord micRecord;
+    private AudioCaptureService audioCapture;
+    private DeepgramEngine deepgram;
+    private PowerManager.WakeLock wakeLock;
+    private final Handler handler=new Handler(Looper.getMainLooper());
+    private volatile boolean running=false;
+    private String sourceLang="en-US",targetLang="ar";
+    private final BroadcastReceiver screenOff=new BroadcastReceiver(){
+        @Override public void onReceive(Context c,Intent i){
+            if(Intent.ACTION_SCREEN_OFF.equals(i.getAction()))stopSelf();
+        }
+    };
+    @Override public void onCreate(){
+        super.onCreate();
+        SharedPreferences p=getSharedPreferences(MainActivity.PREFS,MODE_PRIVATE);
+        sourceLang=p.getString(MainActivity.KEY_SOURCE_LANG,"en-US");
+        targetLang=p.getString(MainActivity.KEY_TARGET_LANG,"ar");
+        PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);
+        wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"ST::lock");
+        wakeLock.acquire(3600000L);
+        registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        createChannel();
+        startForeground(NOTIF_ID,buildNotif());
+        addOverlay();
+        running=true;
+        deepgram=new DeepgramEngine();
+        deepgram.start(BuildConfig.DEEPGRAM_KEY,transcript->{
+            showOverlay(transcript);
+            TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
+        });
+        startAudioCapture();
+    }
+    private void startAudioCapture(){
+        Intent proj=MainActivity.getProjectionData();
+        if(AudioCaptureService.isSupported()&&proj!=null){
+            audioCapture=new AudioCaptureService();
+            boolean ok=audioCapture.onActivityResult(null,android.app.Activity.RESULT_OK,proj);
+            if(ok){
+                boolean started=audioCapture.startCapture((data,len)->deepgram.sendAudio(data,len));
+                if(started){showOverlay("يلتقط صوت الفيديو");return;}
+            }
+        }
+        startMic();
+    }
+    private void startMic(){
+        int buf=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
+        micRecord=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buf*4);
+        if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
+        micRecord.startRecording();
+        showOverlay("يستمع بالميكروفون");
+        new Thread(()->{short[]b=new short[buf];while(running){int r=micRecord.read(b,0,b.length);if(r>0)deepgram.sendAudio(b,r);}},"MicThread").start();
+    }
+    private void addOverlay(){
+        wm=(WindowManager)getSystemService(WINDOW_SERVICE);
+        overlay=new TextView(this);
+        overlay.setTextColor(Color.WHITE);overlay.setTextSize(18f);overlay.setGravity(Gravity.CENTER);
+        overlay.setShadowLayer(8f,0f,2f,Color.BLACK);overlay.setBackgroundColor(Color.TRANSPARENT);
+        overlay.setPadding(20,8,20,8);overlay.setMaxLines(2);
+        int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
+        WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
+        lp.gravity=Gravity.BOTTOM;lp.y=120;wm.addView(overlay,lp);
+    }
+    private void showOverlay(String t){handler.post(()->{if(overlay!=null)overlay.setText(t);});}
+    @Override public int onStartCommand(Intent i,int f,int id){
+        if(i!=null&&ACTION_STOP.equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
+        return START_STICKY;
+    }
+    @Override public void onDestroy(){
+        running=false;
+        if(deepgram!=null)deepgram.stop();
+        if(audioCapture!=null)audioCapture.stop();
+        if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
+        if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
+        if(wm!=null&&overlay!=null){try{wm.removeView(overlay);}catch(Exception ignored){}}
+        try{unregisterReceiver(screenOff);}catch(Exception ignored){}
+        super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent i){return null;}
+    private void createChannel(){
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
+            NotificationChannel c=new NotificationChannel(CHANNEL_ID,"الترجمة",NotificationManager.IMPORTANCE_LOW);
+            c.setShowBadge(false);c.setSound(null,null);
+            getSystemService(NotificationManager.class).createNotificationChannel(c);
+        }
+    }
+    private Notification buildNotif(){
+        int f=Build.VERSION.SDK_INT>=Build.VERSION_CODES.M?PendingIntent.FLAG_IMMUTABLE:0;
+        PendingIntent stop=PendingIntent.getService(this,0,new Intent(this,SubtitleService.class).setAction(ACTION_STOP),f);
+        return new NotificationCompat.Builder(this,CHANNEL_ID).setContentTitle("الترجمة شغالة").setContentText("اضغط إيقاف").setSmallIcon(android.R.drawable.ic_btn_speak_now).addAction(android.R.drawable.ic_media_pause,"إيقاف",stop).setOngoing(true).setPriority(NotificationCompat.PRIORITY_LOW).setSilent(true).build();
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/TranslationHelper.java ====================
+package com.leno.subtitletranslator;
+
+import android.util.Log;
+
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * محرك ترجمة متقدم:
+ * ✓ Buffering ذكي — تجميع النصوص لـ 150ms قبل الترجمة (أقل API calls)
+ * ✓ Fallback ثنائي — MyMemory أولاً + Google Translate كبديل
+ * ✓ Retry Logic — إعادة محاولة تلقائية مع backoff
+ * ✓ Cache LRU — آخر 500 ترجمة
+ * ✓ Rate Limit Handling — كشف انقطاع الخدمة تلقائي
+ * ✓ Thread-safe — آمن للاستخدام من عدة threads
+ */
+public class TranslationHelper {
+
+    private static final String TAG = "TranslationHelper";
+
+    // ===================== Configuration =====================
+    private static final int BUFFER_TIME_MS = 150;           // تجميع النصوص لـ 150ms
+    private static final int CACHE_SIZE = 500;               // أكبر 500 ترجمة
+    private static final int CONNECT_TIMEOUT_MS = 3000;      // 3 ثواني اتصال
+    private static final int READ_TIMEOUT_MS = 5000;         // 5 ثواني قراءة
+    private static final int MAX_RETRIES = 2;
+    private static final int INITIAL_BACKOFF_MS = 100;
+
+    // ===================== Cache & Buffer =====================
+    private static final Map<String, String> cache = new LinkedHashMap<String, String>(CACHE_SIZE, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+            return size() > CACHE_SIZE;
+        }
+    };
+
+    private static volatile String pendingText = "";
+    private static volatile long lastBufferTime = 0;
+    private static final Object bufferLock = new Object();
+    private static final ScheduledExecutorService bufferExecutor = Executors.newScheduledThreadPool(1);
+    private static volatile boolean translationScheduled = false;
+
+    // Rate limiting detection
+    private static final Map<String, Long> rateLimitTracker = new ConcurrentHashMap<>();
+    private static final long RATE_LIMIT_COOLDOWN_MS = 60000; // 1 minute cooldown
+
+
+    public static void translateAsync(String text, String sourceLangCode, String targetLangCode, TranslationCallback callback) {
+        if (text == null || text.trim().isEmpty()) {
+            callback.onResult("");
+            return;
+        }
+
+        // أضف للـ buffer
+        synchronized (bufferLock) {
+            pendingText = (pendingText.isEmpty() ? "" : pendingText + " ") + text.trim();
+            lastBufferTime = System.currentTimeMillis();
+
+            // جدول الترجمة بعد BUFFER_TIME_MS لو لم تكن مجدولة
+            if (!translationScheduled) {
+                translationScheduled = true;
+                bufferExecutor.schedule(() -> {
+                    String toTranslate;
+                    synchronized (bufferLock) {
+                        toTranslate = pendingText;
+                        pendingText = "";
+                        translationScheduled = false;
+                    }
+                    if (!toTranslate.isEmpty()) {
+                        performTranslation(toTranslate, sourceLangCode, targetLangCode, callback);
+                    }
+                }, BUFFER_TIME_MS, TimeUnit.MILLISECONDS);
+            }
+        }
+    }
+
+    private static void performTranslation(String text, String sourceLangCode, String targetLangCode, TranslationCallback callback) {
+        new Thread(() -> {
+            String result = translate(text, sourceLangCode, targetLangCode);
+            callback.onResult(result);
+        }).start();
+    }
+
+    public static String translate(String text, String sourceLangCode, String targetLangCode) {
+        if (text == null || text.trim().isEmpty()) return "";
+
+        String sourceShort = sourceLangCode.split("-")[0];
+        String cacheKey = sourceShort + "|" + targetLangCode + "|" + text.trim().toLowerCase();
+
+        // 1️⃣ تحقق من الـ Cache أولاً
+        synchronized (cache) {
+            if (cache.containsKey(cacheKey)) {
+                return cache.get(cacheKey);
+            }
+        }
+
+        // 2️⃣ حاول الترجمة مع retry logic
+        String result = null;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                result = tryTranslateViaMyMemory(text, sourceShort, targetLangCode);
+                if (result != null && !result.isEmpty()) {
+                    break;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "MyMemory attempt " + (attempt + 1) + " failed");
+                if (attempt < MAX_RETRIES) {
+                    long backoff = INITIAL_BACKOFF_MS * (long) Math.pow(2, attempt);
+                    try {
+                        Thread.sleep(backoff);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 3️⃣ Fallback: جرّب LibreTranslate لو MyMemory فشل
+        if (result == null || result.isEmpty()) {
+            try {
+                result = tryTranslateViaLibreTranslate(text, sourceShort, targetLangCode);
+                if (result != null && !result.isEmpty()) {
+                    Log.d(TAG, "LibreTranslate fallback succeeded");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "LibreTranslate fallback failed: " + e.getMessage());
+            }
+        }
+
+        // 4️⃣ Fallback نهائي: النص الأصلي
+        if (result == null || result.isEmpty()) {
+            result = text;
+            Log.w(TAG, "All translation services failed, returning original");
+        }
+
+        // 5️⃣ احفظ في الـ Cache
+        synchronized (cache) {
+            cache.put(cacheKey, result);
+        }
+
+        return result;
+    }
+
+    // ===================== MyMemory (الخدمة الأساسية) =====================
+    private static String tryTranslateViaMyMemory(String text, String sourceShort, String targetLangCode) throws Exception {
+        String encoded = URLEncoder.encode(text, "UTF-8");
+        String urlStr = "https://api.mymemory.translated.net/get?q=" + encoded
+                + "&langpair=" + sourceShort + "|" + targetLangCode;
+
+        String rateLimitKey = "mymemory";
+        if (isRateLimited(rateLimitKey)) {
+            throw new Exception("Rate limit cooldown active");
+        }
+
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
+        conn.setRequestProperty("User-Agent", "SubtitleTranslator/1.0");
+
+        int responseCode = conn.getResponseCode();
+
+        if (responseCode == 429) {
+            markRateLimited(rateLimitKey);
+            throw new Exception("Rate limit hit (429)");
+        }
+
+        if (responseCode < 200 || responseCode >= 300) {
+            throw new Exception("HTTP " + responseCode);
+        }
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) sb.append(line);
+        reader.close();
+        conn.disconnect();
+
+        JSONObject json = new JSONObject(sb.toString());
+        String translatedText = json.getJSONObject("responseData").getString("translatedText");
+        return translatedText.isEmpty() ? null : translatedText;
+    }
+
+    // ===================== LibreTranslate Fallback =====================
+    private static String tryTranslateViaLibreTranslate(String text, String sourceShort, String targetLangCode) throws Exception {
+        String rateLimitKey = "libretranslate";
+        if (isRateLimited(rateLimitKey)) {
+            throw new Exception("Rate limit cooldown active");
+        }
+
+        String encoded = URLEncoder.encode(text, "UTF-8");
+        String urlStr = "https://libretranslate.de/translate";
+
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+        conn.setReadTimeout(READ_TIMEOUT_MS);
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+        conn.setRequestProperty("User-Agent", "SubtitleTranslator/1.0");
+        conn.setDoOutput(true);
+
+        String body = "q=" + encoded + "&source=" + sourceShort + "&target=" + targetLangCode;
+        conn.getOutputStream().write(body.getBytes("UTF-8"));
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode == 429) {
+            markRateLimited(rateLimitKey);
+            throw new Exception("Rate limit hit (429)");
+        }
+
+        if (responseCode < 200 || responseCode >= 300) {
+            throw new Exception("HTTP " + responseCode);
+        }
+
+        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) sb.append(line);
+        reader.close();
+        conn.disconnect();
+
+        JSONObject json = new JSONObject(sb.toString());
+        String translatedText = json.getString("translatedText");
+        return translatedText.isEmpty() ? null : translatedText;
+    }
+
+    // ===================== Rate Limit Detection =====================
+    private static boolean isRateLimited(String service) {
+        Long cooldownUntil = rateLimitTracker.get(service);
+        if (cooldownUntil == null) return false;
+        return System.currentTimeMillis() < cooldownUntil;
+    }
+
+    private static void markRateLimited(String service) {
+        rateLimitTracker.put(service, System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS);
+        Log.w(TAG, "Rate-limited: " + service);
+    }
+
+    // ===================== Callback Interface =====================
+    public interface TranslationCallback {
+        void onResult(String translatedText);
+    }
+
+    public static void clearCache() {
+        synchronized (cache) {
+            cache.clear();
+        }
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/AudioCaptureService.java ====================
+package com.leno.subtitletranslator;
+import android.app.Activity;
+import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioPlaybackCaptureConfiguration;
+import android.media.AudioRecord;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.os.Build;
+import android.util.Log;
+public class AudioCaptureService {
+    private static final String TAG = "ACS_DIAG";
+    public static final int REQUEST_CODE = 200;
+    private MediaProjection mediaProjection;
+    private AudioRecord audioRecord;
+    private boolean capturing = false;
+    public static boolean isSupported() {
+        boolean s = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q;
+        Log.d(TAG,"[1] isSupported="+s+" SDK="+Build.VERSION.SDK_INT);
+        return s;
+    }
+    public static void requestPermission(Activity a) {
+        Log.d(TAG,"[2] requestPermission");
+        if(!isSupported())return;
+        MediaProjectionManager m=(MediaProjectionManager)a.getSystemService(Activity.MEDIA_PROJECTION_SERVICE);
+        a.startActivityForResult(m.createScreenCaptureIntent(),REQUEST_CODE);
+    }
+    public boolean onActivityResult(Activity a,int code,Intent data) {
+        Log.d(TAG,"[3] onActivityResult code="+code+" data="+(data!=null));
+        if(code!=Activity.RESULT_OK||data==null){Log.w(TAG,"[3] denied");return false;}
+        if(!isSupported())return false;
+        MediaProjectionManager m=(MediaProjectionManager)a.getSystemService(Activity.MEDIA_PROJECTION_SERVICE);
+        mediaProjection=m.getMediaProjection(code,data);
+        Log.d(TAG,"[4] projection="+(mediaProjection!=null?"OK":"NULL"));
+        return mediaProjection!=null;
+    }
+    public boolean startCapture(AudioDataCallback cb) {
+        Log.d(TAG,"[5] startCapture proj="+(mediaProjection!=null));
+        if(!isSupported()||mediaProjection==null)return false;
+        try {
+            AudioPlaybackCaptureConfiguration cfg=new AudioPlaybackCaptureConfiguration.Builder(mediaProjection).addMatchingUsage(AudioAttributes.USAGE_MEDIA).addMatchingUsage(AudioAttributes.USAGE_GAME).build();
+            int buf=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
+            audioRecord=new AudioRecord.Builder().setAudioPlaybackCaptureConfig(cfg).setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(16000).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build()).setBufferSizeInBytes(buf*4).build();
+            Log.d(TAG,"[5c] state="+audioRecord.getState());
+            if(audioRecord.getState()!=AudioRecord.STATE_INITIALIZED)return false;
+            capturing=true;
+            audioRecord.startRecording();
+            Log.d(TAG,"[6] recording="+audioRecord.getRecordingState());
+            new Thread(()->{
+                short[]b=new short[buf];int n=0;
+                while(capturing){
+                    int r=audioRecord.read(b,0,b.length);
+                    if(r>0){n++;if(n==1||n%50==0){long s=0;for(int i=0;i<r;i++)s+=Math.abs(b[i]);Log.d(TAG,"[7] read#"+n+" amp="+(s/r));}if(cb!=null)cb.onAudioData(b,r);}
+                    else if(r<0){Log.e(TAG,"[7] err="+r);break;}
+                }
+                Log.d(TAG,"[7] thread done reads="+n);
+            },"AC-Thread").start();
+            return true;
+        } catch(Exception e){Log.e(TAG,"[5] ex="+e.getMessage());return false;}
+    }
+    public void stop(){capturing=false;if(audioRecord!=null){try{audioRecord.stop();audioRecord.release();}catch(Exception e){}audioRecord=null;}if(mediaProjection!=null){mediaProjection.stop();mediaProjection=null;}}
+    public interface AudioDataCallback{void onAudioData(short[]data,int len);}
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/SpeechConfig.java ====================
+package com.leno.subtitletranslator;
+
+/**
+ * SpeechConfig — إعدادات محرك التعرف على الكلام.
+ * يُمرَّر لأي محرك عند التهيئة.
+ */
+public class SpeechConfig {
+
+    public final String sourceLanguage;   // لغة المصدر (en-US, ja-JP, إلخ)
+    public final int sampleRate;          // معدل العينة (16000 افتراضي)
+    public final boolean partialResults;  // نتائج جزئية أثناء الكلام؟
+
+    private SpeechConfig(Builder b) {
+        this.sourceLanguage  = b.sourceLanguage;
+        this.sampleRate      = b.sampleRate;
+        this.partialResults  = b.partialResults;
+    }
+
+    public static class Builder {
+        private String sourceLanguage = "en-US";
+        private int    sampleRate     = 16000;
+        private boolean partialResults = false;
+
+        public Builder language(String lang) { this.sourceLanguage = lang; return this; }
+        public Builder sampleRate(int rate)  { this.sampleRate = rate; return this; }
+        public Builder partialResults(boolean v) { this.partialResults = v; return this; }
+        public SpeechConfig build() { return new SpeechConfig(this); }
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/SpeechEngine.java ====================
+package com.leno.subtitletranslator;
+
+/**
+ * SpeechEngine — Interface رئيسي لمحرك التعرف على الكلام.
+ *
+ * لتغيير المحرك لاحقاً: فقط أنشئ كلاس جديد يطبّق هذا الـ Interface
+ * وغيّر سطراً واحداً في SubtitleService.
+ *
+ * محركات مخطط لها:
+ * - SpeechRecognizerEngine (الحالي - مؤقت)
+ * - DeepgramEngine (مستقبلاً)
+ * - WhisperEngine (مستقبلاً إذا تحسنت الأجهزة)
+ * - GoogleCloudEngine (مستقبلاً)
+ */
+public interface SpeechEngine {
+
+    /**
+     * تهيئة المحرك — يُستدعى مرة واحدة عند البدء.
+     * @param config إعدادات اللغة والجودة
+     * @param listener للاستماع لنتائج التعرف
+     */
+    void initialize(SpeechConfig config, SpeechListener listener);
+
+    /**
+     * ابدأ الاستماع — يستقبل صوتاً من الميكروفون أو AudioPlaybackCapture.
+     */
+    void startListening();
+
+    /**
+     * أوقف الاستماع مؤقتاً (الشاشة أُغلقت مثلاً).
+     */
+    void stopListening();
+
+    /**
+     * حرر كل الموارد — يُستدعى عند إغلاق الخدمة.
+     */
+    void destroy();
+
+    /**
+     * هل المحرك جاهز للعمل؟
+     */
+    boolean isReady();
+
+    /**
+     * اسم المحرك للـ logging والـ debugging.
+     */
+    String getEngineName();
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/SpeechListener.java ====================
+package com.leno.subtitletranslator;
+
+/**
+ * SpeechListener — Callback لاستقبال نتائج التعرف على الكلام.
+ * SubtitleService يطبّق هذا الـ Interface ويستقبل النتائج.
+ */
+public interface SpeechListener {
+
+    /**
+     * جملة كاملة تم التعرف عليها — أرسلها للترجمة.
+     * @param text النص المتعرَّف عليه
+     */
+    void onSpeechResult(String text);
+
+    /**
+     * نتيجة جزئية أثناء الكلام (اختياري).
+     * @param partialText النص الجزئي
+     */
+    void onPartialResult(String partialText);
+
+    /**
+     * خطأ في المحرك.
+     * @param errorCode كود الخطأ
+     * @param message رسالة الخطأ
+     */
+    void onError(int errorCode, String message);
+
+    /**
+     * المحرك جاهز للاستماع.
+     */
+    void onReady();
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/SpeechRecognizerEngine.java ====================
+package com.leno.subtitletranslator;
+
+import android.content.Context;
+import android.content.Intent;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
+import android.util.Log;
+
+import java.util.ArrayList;
+
+/**
+ * SpeechRecognizerEngine — محرك مؤقت للتطوير.
+ *
+ * يستخدم Android SpeechRecognizer (Google).
+ * يمكن استبداله لاحقاً بـ DeepgramEngine أو غيره
+ * بدون تعديل أي كود آخر في المشروع.
+ *
+ * العيوب المعروفة (لذلك هو مؤقت):
+ * - يعتمد على Google Services
+ * - ليس ثابتاً على كل الأجهزة
+ * - يحتاج إنترنت للغات غير محمّلة
+ */
+public class SpeechRecognizerEngine implements SpeechEngine {
+
+    private static final String TAG = "SpeechRecognizerEngine";
+
+    // Backoff ذكي: 0 → 1s → 2s → 5s → 15s → 30s → 60s
+    private static final long[] BACKOFF = {0, 1000, 2000, 5000, 15000, 30000, 60000};
+
+    private final Context        context;
+    private SpeechRecognizer     recognizer;
+    private SpeechConfig         config;
+    private SpeechListener       listener;
+    private final Handler        handler = new Handler(Looper.getMainLooper());
+    private boolean              running  = false;
+    private boolean              busy     = false;
+    private int                  silence  = 0;
+
+    public SpeechRecognizerEngine(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    @Override
+    public void initialize(SpeechConfig config, SpeechListener listener) {
+        this.config   = config;
+        this.listener = listener;
+
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            listener.onError(-1, "SpeechRecognizer غير متاح على هذا الجهاز");
+            return;
+        }
+
+        recognizer = SpeechRecognizer.createSpeechRecognizer(context);
+        recognizer.setRecognitionListener(internalListener);
+        running = true;
+        listener.onReady();
+        Log.d(TAG, "✅ Initialized: " + config.sourceLanguage);
+    }
+
+    @Override
+    public void startListening() {
+        if (!running || busy || recognizer == null) return;
+        busy = true;
+
+        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+            RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.sourceLanguage);
+        intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.getPackageName());
+        // لا PARTIAL_RESULTS افتراضياً = أقل CPU
+        if (config.partialResults) {
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true);
+        }
+
+        try {
+            recognizer.startListening(intent);
+        } catch (Exception e) {
+            busy = false;
+            scheduleNext();
+        }
+    }
+
+    @Override
+    public void stopListening() {
+        running = false;
+        handler.removeCallbacksAndMessages(null);
+        if (recognizer != null) {
+            try { recognizer.stopListening(); } catch (Exception ignored) {}
+        }
+    }
+
+    @Override
+    public void destroy() {
+        running = false;
+        busy    = false;
+        handler.removeCallbacksAndMessages(null);
+        if (recognizer != null) {
+            try { recognizer.destroy(); } catch (Exception ignored) {}
+            recognizer = null;
+        }
+        Log.d(TAG, "Destroyed");
+    }
+
+    @Override
+    public boolean isReady() {
+        return recognizer != null && running;
+    }
+
+    @Override
+    public String getEngineName() {
+        return "SpeechRecognizerEngine (Temp)";
+    }
+
+    // ── Scheduling ───────────────────────────────────────────────
+
+    private void scheduleNext() {
+        if (!running) return;
+        int idx = Math.min(silence, BACKOFF.length - 1);
+        handler.postDelayed(this::startListening, BACKOFF[idx]);
+    }
+
+    private void resetRecognizer() {
+        if (recognizer != null) {
+            try { recognizer.destroy(); } catch (Exception ignored) {}
+        }
+        recognizer = SpeechRecognizer.createSpeechRecognizer(context);
+        recognizer.setRecognitionListener(internalListener);
+        busy = false;
+        scheduleNext();
+    }
+
+    // ── Internal Listener ────────────────────────────────────────
+
+    private final RecognitionListener internalListener = new RecognitionListener() {
+
+        @Override
+        public void onResults(Bundle results) {
+            busy = false;
+            ArrayList<String> matches =
+                results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (matches != null && !matches.isEmpty() && !matches.get(0).trim().isEmpty()) {
+                silence = 0;
+                listener.onSpeechResult(matches.get(0));
+            } else {
+                silence = Math.min(silence + 1, BACKOFF.length - 1);
+            }
+            scheduleNext();
+        }
+
+        @Override
+        public void onPartialResults(Bundle results) {
+            if (!config.partialResults) return;
+            ArrayList<String> matches =
+                results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+            if (matches != null && !matches.isEmpty()) {
+                listener.onPartialResult(matches.get(0));
+            }
+        }
+
+        @Override
+        public void onError(int error) {
+            busy = false;
+            switch (error) {
+                case SpeechRecognizer.ERROR_NO_MATCH:
+                case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
+                    silence = Math.min(silence + 1, BACKOFF.length - 1);
+                    scheduleNext();
+                    break;
+                case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
+                    handler.postDelayed(() -> resetRecognizer(), 2000);
+                    break;
+                case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
+                    listener.onError(error, "صلاحية الميكروفون مرفوضة");
+                    break;
+                default:
+                    silence = 0;
+                    scheduleNext();
+                    break;
+            }
+        }
+
+        @Override public void onReadyForSpeech(Bundle b) {}
+        @Override public void onBeginningOfSpeech() { silence = 0; }
+        @Override public void onEndOfSpeech() {}
+        @Override public void onRmsChanged(float v) {}
+        @Override public void onBufferReceived(byte[] b) {}
+        @Override public void onEvent(int t, Bundle b) {}
+    };
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/java/com/leno/subtitletranslator/DeepgramEngine.java ====================
+package com.leno.subtitletranslator;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+import org.json.JSONObject;
+import java.util.concurrent.TimeUnit;
+import okhttp3.*;
+import okio.ByteString;
+public class DeepgramEngine {
+    private static final String TAG="DeepgramEngine";
+    private static final String WS_URL="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&utterance_end_ms=1000";
+    public interface ResultCallback{void onResult(String text);}
+    private OkHttpClient client;
+    private WebSocket webSocket;
+    private volatile boolean connected=false,reconnect=true,ready=false;
+    private ResultCallback callback;
+    private String apiKey;
+    public void start(String key,ResultCallback cb){
+        this.apiKey=key;this.callback=cb;this.reconnect=true;
+        client=new OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(0,TimeUnit.SECONDS).pingInterval(20,TimeUnit.SECONDS).build();
+        connect();
+    }
+    private void connect(){
+        if(!reconnect)return;
+        ready=false;
+        Request req=new Request.Builder().url(WS_URL).header("Authorization","Token "+apiKey).build();
+        webSocket=client.newWebSocket(req,new WebSocketListener(){
+            @Override public void onOpen(WebSocket ws,Response r){connected=true;ready=true;Log.d(TAG,"✅ Connected");}
+            @Override public void onMessage(WebSocket ws,String text){
+                try{
+                    JSONObject j=new JSONObject(text);
+                    if(!j.has("channel"))return;
+                    String t=j.getJSONObject("channel").getJSONArray("alternatives").getJSONObject(0).getString("transcript");
+                    if(!t.isEmpty()&&callback!=null){Log.d(TAG,"transcript: "+t);callback.onResult(t);}
+                }catch(Exception e){Log.w(TAG,"parse: "+e.getMessage());}
+            }
+            @Override public void onFailure(WebSocket ws,Throwable t,Response r){
+                connected=false;ready=false;Log.e(TAG,"failure: "+t.getMessage());
+                if(r!=null&&r.code()==401){reconnect=false;Log.e(TAG,"Invalid API Key");return;}
+                if(reconnect)new Handler(Looper.getMainLooper()).postDelayed(()->connect(),3000);
+            }
+            @Override public void onClosed(WebSocket ws,int code,String reason){connected=false;ready=false;Log.d(TAG,"closed: "+reason);}
+        });
+    }
+    public void sendAudio(short[]data,int len){
+        if(!connected||!ready||webSocket==null)return;
+        byte[]pcm=new byte[len*2];
+        for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
+        boolean ok=webSocket.send(ByteString.of(pcm));
+        if(!ok)Log.e(TAG,"send failed");
+    }
+    public void stop(){
+        reconnect=false;connected=false;ready=false;
+        if(webSocket!=null){try{webSocket.send("{\"type\":\"CloseStream\"}");}catch(Exception ignored){}webSocket.close(1000,"done");}
+        if(client!=null){client.connectionPool().evictAll();client.dispatcher().executorService().shutdown();}
+    }
+}
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/values/arrays.xml ====================
+<resources>
+    <string-array name="source_lang_labels">
+        <item>الإنجليزية</item>
+        <item>العربية</item>
+        <item>الفرنسية</item>
+        <item>الإسبانية</item>
+        <item>التركية</item>
+        <item>اليابانية</item>
+        <item>الكورية</item>
+        <item>الروسية</item>
+    </string-array>
+
+    <string-array name="source_lang_codes">
+        <item>en-US</item>
+        <item>ar-SA</item>
+        <item>fr-FR</item>
+        <item>es-ES</item>
+        <item>tr-TR</item>
+        <item>ja-JP</item>
+        <item>ko-KR</item>
+        <item>ru-RU</item>
+    </string-array>
+
+    <string-array name="target_lang_labels">
+        <item>العربية</item>
+        <item>الإنجليزية</item>
+        <item>الفرنسية</item>
+        <item>الإسبانية</item>
+        <item>التركية</item>
+        <item>الأردية</item>
+    </string-array>
+
+    <string-array name="target_lang_codes">
+        <item>ar</item>
+        <item>en</item>
+        <item>fr</item>
+        <item>es</item>
+        <item>tr</item>
+        <item>ur</item>
+    </string-array>
+</resources>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/values/strings.xml ====================
+<resources>
+    <string name="app_name">مترجم الفيديو المباشر</string>
+</resources>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/values/styles.xml ====================
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.SubtitleTranslator" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#1A1A2E</item>
+        <item name="colorPrimaryDark">#0F0F1A</item>
+        <item name="colorAccent">#00D9FF</item>
+    </style>
+</resources>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/values/colors.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="app_background">#F5F5F5</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_premium_bg">#6B5B95</color>
+    
+    <!-- Text Colors -->
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#888888</color>
+    
+    <!-- Accent Colors -->
+    <color name="accent_green">#4CAF50</color>
+    <color name="accent_orange">#FF9800</color>
+    <color name="accent_red">#F44336</color>
+    
+    <!-- Button Colors -->
+    <color name="button_primary">#6B5B95</color>
+    <color name="button_secondary">#E0E0E0</color>
+    
+    <!-- Card Colors -->
+    <color name="privacy_card_bg">#E8F5E9</color>
+</resources>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/layout/activity_main.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@color/app_background">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="مترجم الفيديو"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_primary" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ترجم صوت الفيديو بسهولة"
+            android:textSize="13sp"
+            android:textColor="@color/text_secondary"
+            android:paddingTop="6dp" />
+    </LinearLayout>
+
+    <!-- Status Card -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:cardBackgroundColor="@color/card_background">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="متوقف"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@color/text_primary"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/tvRemainingTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="متبقي: 30 دقيقة"
+                android:textSize="13sp"
+                android:textColor="@color/accent_orange" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- Source Language -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="لغة الفيديو:"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:paddingBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/spinnerSource"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="12dp"
+        android:background="@drawable/spinner_background"
+        android:padding="12dp" />
+
+    <!-- Target Language -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ترجم إلى:"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:paddingBottom="4dp" />
+
+    <Spinner
+        android:id="@+id/spinnerTarget"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/spinner_background"
+        android:padding="12dp" />
+
+    <!-- Spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- ProgressBar -->
+    <ProgressBar
+        android:id="@+id/progressBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnStart"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="8dp"
+            android:text="ابدأ"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="@color/button_primary"
+            android:textColor="@android:color/white" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="أوقف"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="@color/button_secondary"
+            android:textColor="@color/text_primary" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="اضغط ابدأ ثم ارجع للفيديو"
+        android:textSize="12sp"
+        android:textColor="@color/text_secondary"
+        android:gravity="center"
+        android:paddingTop="10dp" />
+
+</LinearLayout>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/layout/dialog_upgrade.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="انتهت فترة التجربة"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="@color/text_primary"
+        android:gravity="center"
+        android:paddingBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tvUpgradeMessage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="استخدمت 30 دقيقة اليوم"
+        android:textSize="13sp"
+        android:textColor="@color/text_secondary"
+        android:gravity="center"
+        android:paddingBottom="16dp"
+        android:lineSpacingExtra="4dp" />
+
+    <!-- PLUS Plan -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:cardBackgroundColor="@color/card_background">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="PLUS"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="$0.99/شهر"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/accent_green" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ترجمة غير محدود\n100+ لغة\nبدون إعلانات"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:lineSpacingExtra="4dp"
+                android:paddingBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnUpgradePlus"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="ترقِّ إلى PLUS"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:backgroundTint="@color/button_primary"
+                android:textColor="@android:color/white" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- PREMIUM Plan -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="2dp"
+        app:cardBackgroundColor="@color/card_premium_bg">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingBottom="8dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="PREMIUM"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="$2.99/شهر"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/accent_orange" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="كل ميزات PLUS\nOffline translation\nCustom themes"
+                android:textSize="12sp"
+                android:textColor="@android:color/white"
+                android:lineSpacingExtra="4dp"
+                android:paddingBottom="12dp" />
+
+            <Button
+                android:id="@+id/btnUpgradePremium"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="ترقِّ إلى PREMIUM"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:backgroundTint="@color/button_secondary"
+                android:textColor="@color/text_primary" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- Later -->
+    <Button
+        android:id="@+id/btnRemindLater"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="لاحقاً"
+        android:textSize="14sp"
+        android:backgroundTint="@android:color/transparent"
+        android:textColor="@color/text_secondary" />
+
+</LinearLayout>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/layout/dialog_permissions.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Intro -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="التطبيق يطلب صلاحيات ضرورية فقط"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_primary"
+            android:paddingBottom="12dp" />
+
+        <!-- Permission 1: Microphone -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🎤"
+                    android:textSize="24sp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="تسجيل الصوت"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="علشان نسمع الصوت من الفيديو أو التطبيق ونترجمه\n\n✓ بلا تسجيل مخفي\n✓ بلا حفظ الصوت"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:paddingStart="36dp"
+                android:paddingTop="4dp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+
+        <!-- Permission 2: Overlay -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📺"
+                    android:textSize="24sp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="عرض فوق التطبيقات"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="علشان نعرض الترجمة شفاف فوق الفيديو أو التطبيق\n\n✓ Overlay شفاف بلا تفاعل\n✓ لا تشتت الانتباه"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:paddingStart="36dp"
+                android:paddingTop="4dp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+
+        <!-- Permission 3: Notifications -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔔"
+                    android:textSize="24sp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="الإشعارات"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="إشعار دائم يخبرك إن الخدمة شغالة (قانوني لكل تطبيق يشتغل في الخلفية)\n\n✓ إشعار واحد فقط\n✓ مع زر إيقاف سريع"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:paddingStart="36dp"
+                android:paddingTop="4dp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+
+        <!-- Permission 4: Internet -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🌐"
+                    android:textSize="24sp"
+                    android:paddingEnd="12dp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="الإنترنت"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text_primary" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="علشان نرسل النص لخوادم الترجمة\n\n✓ HTTPS مشفر (آمن)\n✓ بلا تتبع شخصي"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:paddingStart="36dp"
+                android:paddingTop="4dp"
+                android:lineSpacingExtra="4dp" />
+        </LinearLayout>
+
+        <!-- Privacy Notice -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            app:cardCornerRadius="8dp"
+            app:cardBackgroundColor="@color/privacy_card_bg">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="🔒 خصوصيتك آمنة"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/accent_green"
+                    android:paddingBottom="4dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="التطبيق لا يطلب:\n❌ الموقع\n❌ جهات الاتصال\n❌ ملفاتك الشخصية\n❌ الكاميرا"
+                    android:textSize="11sp"
+                    android:textColor="@color/text_secondary"
+                    android:lineSpacingExtra="2dp" />
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+    </LinearLayout>
+</ScrollView>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/spinner_background.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/card_background" />
+    <stroke android:color="@color/button_secondary" android:width="1dp" />
+    <corners android:radius="8dp" />
+</shape>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/button_secondary.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/button_secondary" />
+    <corners android:radius="8dp" />
+</shape>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/button_primary.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/button_primary" />
+    <corners android:radius="8dp" />
+</shape>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/ic_launcher_background.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#0F0F1A" />
+</shape>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/ic_launcher_foreground.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- شريط subtitle علوي -->
+    <path
+        android:fillColor="#00D9FF"
+        android:pathData="M24,48 L84,48 A6,6 0 0 1 90,54 L90,58 A6,6 0 0 1 84,64 L24,64 A6,6 0 0 1 18,58 L18,54 A6,6 0 0 1 24,48 Z" />
+
+    <!-- شريط subtitle سفلي أقصر (يشبه سطرين ترجمة) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,68 L74,68 A5,5 0 0 1 79,73 L79,76 A5,5 0 0 1 74,81 L34,81 A5,5 0 0 1 29,76 L29,73 A5,5 0 0 1 34,68 Z" />
+
+</vector>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/res/drawable/badge_premium.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/accent_orange" />
+    <corners android:radius="12dp" />
+</shape>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/app/src/main/AndroidManifest.xml ====================
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.SubtitleTranslator"
+        android:supportsRtl="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".SubtitleService"
+            android:foregroundServiceType="microphone"
+            android:exported="false" />
+
+    </application>
+</manifest>
+
+==================== /data/data/com.termux/files/home/SubtitleTranslator/settings.gradle ====================
+rootProject.name = "SubtitleTranslator"
+include ':app'
