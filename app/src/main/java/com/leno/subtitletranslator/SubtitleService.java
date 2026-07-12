@@ -38,6 +38,7 @@ public class SubtitleService extends Service {
     private AudioProcessor micProcessor;
     private SmartSleepManager micSleepManager;
     private DeepgramEngine deepgram;
+    private NetlifySTTEngine netlifyEngine;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final StringBuilder pendingTranscript=new StringBuilder();
@@ -66,7 +67,10 @@ public class SubtitleService extends Service {
         startForeground(NOTIF_ID,buildNotif());
         addOverlay();
         running=true;
-        deepgram=new DeepgramEngine();
+        netlifyEngine=new NetlifySTTEngine();
+        netlifyEngine.start(sourceLang,transcript->{
+            TranslationHelper.translateAsync(transcript,sourceLang,targetLang,t->showOverlay(t));
+        });
         deepgram.start(BuildConfig.DEEPGRAM_KEY,sourceLang,transcript->handleTranscript(transcript));
         startAudioCapture();
     }
@@ -114,7 +118,7 @@ public class SubtitleService extends Service {
             audioCapture=new AudioCaptureService();
             boolean ok=audioCapture.onActivityResult(null,android.app.Activity.RESULT_OK,proj);
             if(ok){
-                boolean started=audioCapture.startCapture((data,len)->deepgram.sendAudio(data,len));
+                boolean started=audioCapture.startCapture((data,len)->netlifyEngine.sendAudio(data,len));
                 if(started){showOverlay("يلتقط صوت الفيديو");return;}
             }
         }
@@ -137,7 +141,7 @@ public class SubtitleService extends Service {
                     if(micSleepManager.shouldProcess()){
                         boolean voice=micProcessor.normalizeAndDetectVoice(b,r);
                         micSleepManager.reportFrame(voice);
-                        if(voice)deepgram.sendAudio(b,r);
+                        if(voice)netlifyEngine.sendAudio(b,r);
                     }else{
                         micSleepManager.reportSkipped();
                     }
@@ -165,6 +169,7 @@ public class SubtitleService extends Service {
         if(flushRunnable!=null)handler.removeCallbacks(flushRunnable);
         if(pendingDisplayRunnable!=null)handler.removeCallbacks(pendingDisplayRunnable);
         if(deepgram!=null)deepgram.stop();
+        if(netlifyEngine!=null)netlifyEngine.stop();
         if(audioCapture!=null)audioCapture.stop();
         if(micProcessor!=null)micProcessor.releaseEffects();
         if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
