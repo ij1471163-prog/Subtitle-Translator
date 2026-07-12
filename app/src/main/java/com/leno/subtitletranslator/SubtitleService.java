@@ -33,6 +33,7 @@ public class SubtitleService extends Service {
     private TextView overlay;
     private AudioRecord micRecord;
     private AudioCaptureService audioCapture;
+    private GroqEngine groq;
     private SpeechmaticsEngine speechmatics;
     private AssemblyAIEngine assemblyai;
     private DeepgramEngine deepgram;
@@ -69,6 +70,11 @@ public class SubtitleService extends Service {
         activeEngine=best;
         Log.d(TAG,"Best engine: "+best);
         switch(best){
+            case GROQ:
+                groq=new GroqEngine();
+                groq.start(KeyManager.getGroqKey(this),sourceLang,t->translate(t));
+                showOverlay("Groq جاهز");
+                break;
             case SPEECHMATICS:
                 speechmatics=new SpeechmaticsEngine();
                 speechmatics.start(KeyManager.getSpeechmaticsKey(this),sourceLang,t->translate(t));
@@ -92,6 +98,7 @@ public class SubtitleService extends Service {
     }
     private void sendToEngine(short[]data,int len){
         switch(activeEngine){
+            case GROQ: if(groq!=null)groq.sendAudio(data,len); break;
             case SPEECHMATICS: if(speechmatics!=null)speechmatics.sendAudio(data,len); break;
             case ASSEMBLYAI:   if(assemblyai!=null)assemblyai.sendAudio(data,len); break;
             case DEEPGRAM:     if(deepgram!=null)deepgram.sendAudio(data,len); break;
@@ -145,6 +152,7 @@ public class SubtitleService extends Service {
     }
     @Override public void onDestroy(){
         running=false;
+        if(groq!=null)groq.stop();
         if(speechmatics!=null)speechmatics.stop();
         if(assemblyai!=null)assemblyai.stop();
         if(deepgram!=null)deepgram.stop();

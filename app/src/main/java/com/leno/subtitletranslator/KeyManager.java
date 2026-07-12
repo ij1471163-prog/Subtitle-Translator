@@ -17,6 +17,11 @@ public class KeyManager {
     private static final String A2="ZDJkMWMy";
     private static final String A3="NGIxYzg2MTAxODQ4YzFlNmRhMzM=";
 
+    // Groq - 3 أجزاء
+    private static final String G1="Z3NrX2Q3NEJT";
+    private static final String G2="Z1NjTWd3Q05R";
+    private static final String G3="TTFEeXN6V0dkeWIzRllMM0RXaUFpNzRVRXgxRVBKUWRZVWtYUFY=";
+
     // Speechmatics - 3 أجزاء
     private static final String S1="Q0ZkTHJT";
     private static final String S2="Q3VlZnZn";
@@ -55,6 +60,11 @@ public class KeyManager {
     public static String getAssemblyKey(Context ctx){
         if(!isSafe(ctx))return "";
         return decode(A1,A2,A3);
+    }
+
+    public static String getGroqKey(Context ctx){
+        if(!isSafe(ctx))return "";
+        return decode(G1,G2,G3);
     }
 
     public static String getSpeechmaticsKey(Context ctx){
