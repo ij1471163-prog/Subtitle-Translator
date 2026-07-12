@@ -53,16 +53,19 @@ public class KeyManager {
 
     // ── Public Methods ────────────────────────────────────────
     public static String getDeepgramKey(Context ctx) {
+        if (!SecurityManager.isSafe(ctx)) return "";
         if (!checkPackage(ctx) || !checkSignature(ctx)) return "";
         return decode(D1, D2, D3);
     }
 
     public static String getAssemblyKey(Context ctx) {
+        if (!SecurityManager.isSafe(ctx)) return "";
         if (!checkPackage(ctx) || !checkSignature(ctx)) return "";
         return decode(A1, A2, A3);
     }
 
     public static String getSpeechmaticsKey(Context ctx) {
+        if (!SecurityManager.isSafe(ctx)) return "";
         if (!checkPackage(ctx) || !checkSignature(ctx)) return "";
         return decode(S1, S2, S3);
     }
