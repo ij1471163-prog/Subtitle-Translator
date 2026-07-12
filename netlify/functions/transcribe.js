@@ -1,39 +1,61 @@
 const https = require('https');
 
 exports.handler = async (event) => {
+  console.log('Function called, method:', event.httpMethod);
+  console.log('Has DEEPGRAM_KEY:', !!process.env.DEEPGRAM_KEY);
+  console.log('Has ASSEMBLYAI_KEY:', !!process.env.ASSEMBLYAI_KEY);
+
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
-  const audioBuffer = Buffer.from(event.body, 'base64');
   const lang = event.headers['x-language'] || 'en';
+  const audioData = event.isBase64Encoded
+    ? Buffer.from(event.body, 'base64')
+    : Buffer.from(event.body || '', 'utf8');
 
-  // جرّب Speechmatics أولاً
+  console.log('Audio size:', audioData.length, 'lang:', lang);
+
+  // جرّب Deepgram
   try {
-    const result = await callSpeechmatics(audioBuffer, lang);
-    if (result) return { statusCode: 200, body: JSON.stringify({ text: result, engine: 'speechmatics' }) };
-  } catch (e) { console.log('Speechmatics failed:', e.message); }
+    const text = await callDeepgram(audioData, lang);
+    console.log('Deepgram result:', text);
+    if (text && text.trim()) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ text, engine: 'deepgram' })
+      };
+    }
+  } catch (e) {
+    console.log('Deepgram error:', e.message);
+  }
 
-  // ثاني: AssemblyAI
+  // جرّب AssemblyAI
   try {
-    const result = await callAssemblyAI(audioBuffer);
-    if (result) return { statusCode: 200, body: JSON.stringify({ text: result, engine: 'assemblyai' }) };
-  } catch (e) { console.log('AssemblyAI failed:', e.message); }
+    const text = await callAssemblyAI(audioData);
+    console.log('AssemblyAI result:', text);
+    if (text && text.trim()) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ text, engine: 'assemblyai' })
+      };
+    }
+  } catch (e) {
+    console.log('AssemblyAI error:', e.message);
+  }
 
-  // ثالث: Deepgram
-  try {
-    const result = await callDeepgram(audioBuffer, lang);
-    if (result) return { statusCode: 200, body: JSON.stringify({ text: result, engine: 'deepgram' }) };
-  } catch (e) { console.log('Deepgram failed:', e.message); }
-
-  return { statusCode: 500, body: JSON.stringify({ error: 'All engines failed' }) };
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ text: '', engine: 'none', error: 'No result' })
+  };
 };
 
 function callDeepgram(audio, lang) {
   return new Promise((resolve, reject) => {
-    const options = {
+    if (!process.env.DEEPGRAM_KEY) { reject(new Error('No DEEPGRAM_KEY')); return; }
+    const opts = {
       hostname: 'api.deepgram.com',
-      path: `/v1/listen?language=${lang}&punctuate=true`,
+      path: `/v1/listen?language=${lang}&punctuate=true&model=nova-2`,
       method: 'POST',
       headers: {
         'Authorization': `Token ${process.env.DEEPGRAM_KEY}`,
@@ -41,13 +63,14 @@ function callDeepgram(audio, lang) {
         'Content-Length': audio.length
       }
     };
-    const req = https.request(options, res => {
+    const req = https.request(opts, res => {
       let data = '';
-      res.on('data', chunk => data += chunk);
+      res.on('data', c => data += c);
       res.on('end', () => {
         try {
           const j = JSON.parse(data);
-          resolve(j.results.channels[0].alternatives[0].transcript);
+          const t = j.results?.channels?.[0]?.alternatives?.[0]?.transcript || '';
+          resolve(t);
         } catch (e) { reject(e); }
       });
     });
@@ -59,45 +82,9 @@ function callDeepgram(audio, lang) {
 
 function callAssemblyAI(audio) {
   return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.assemblyai.com',
-      path: '/v2/stream',
-      method: 'POST',
-      headers: {
-        'Authorization': process.env.ASSEMBLYAI_KEY,
-        'Content-Type': 'application/octet-stream',
-        'Transfer-Encoding': 'chunked'
-      }
-    };
-    const req = https.request(options, res => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const j = JSON.parse(data);
-          resolve(j.text || '');
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.write(audio);
-    req.end();
-  });
-}
-
-function callSpeechmatics(audio, lang) {
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'asr.api.speechmatics.com',
-      path: `/v2/jobs`,
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.SPEECHMATICS_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    };
-    // Speechmatics async — للـ real-time نستخدم WebSocket
-    // هنا نرجع null ونترك Deepgram يشتغل
-    resolve(null);
+    if (!process.env.ASSEMBLYAI_KEY) { reject(new Error('No ASSEMBLYAI_KEY')); return; }
+    // AssemblyAI يحتاج upload أولاً ثم transcribe
+    // للتبسيط نستخدم Deepgram فقط الآن
+    reject(new Error('AssemblyAI async not supported in this mode'));
   });
 }
