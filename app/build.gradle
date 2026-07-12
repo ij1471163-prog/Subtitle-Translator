@@ -10,7 +10,6 @@ android {
     compileSdk 34
 
     defaultConfig {
-        buildConfigField "String", "DEEPGRAM_KEY", "\"4220c96edf78e32873705492bf32091a84a50353\""
         applicationId "com.leno.subtitletranslator"
         minSdk 26
         targetSdk 34
