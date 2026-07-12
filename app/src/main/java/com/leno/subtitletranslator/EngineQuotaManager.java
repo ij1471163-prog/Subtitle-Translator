@@ -24,9 +24,9 @@ public class EngineQuotaManager {
 
     // ── اختار المحرك المتاح ──────────────────────────────────
     public Engine getBestEngine() {
+        if (getUsed("deepgram")     < DEEPGRAM_LIMIT_MS)     return Engine.DEEPGRAM;
         if (getUsed("speechmatics") < SPEECHMATICS_LIMIT_MS) return Engine.SPEECHMATICS;
         if (getUsed("assemblyai")   < ASSEMBLYAI_LIMIT_MS)   return Engine.ASSEMBLYAI;
-        if (getUsed("deepgram")     < DEEPGRAM_LIMIT_MS)     return Engine.DEEPGRAM;
         return Engine.LOCAL;
     }
 
