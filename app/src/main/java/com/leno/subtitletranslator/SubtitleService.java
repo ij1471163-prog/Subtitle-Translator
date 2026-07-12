@@ -37,6 +37,7 @@ public class SubtitleService extends Service {
     private AssemblyAIEngine assemblyai;
     private DeepgramEngine deepgram;
     private EngineQuotaManager quota;
+    private EngineQuotaManager.Engine activeEngine=EngineQuotaManager.Engine.LOCAL;
     private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile boolean running=false;
@@ -65,6 +66,7 @@ public class SubtitleService extends Service {
     }
     private void startBestEngine(){
         EngineQuotaManager.Engine best=quota.getBestEngine();
+        activeEngine=best;
         Log.d(TAG,"Best engine: "+best);
         switch(best){
             case SPEECHMATICS:
@@ -89,14 +91,13 @@ public class SubtitleService extends Service {
         }
     }
     private void sendToEngine(short[]data,int len){
-        EngineQuotaManager.Engine best=quota.getBestEngine();
-        switch(best){
+        switch(activeEngine){
             case SPEECHMATICS: if(speechmatics!=null)speechmatics.sendAudio(data,len); break;
             case ASSEMBLYAI:   if(assemblyai!=null)assemblyai.sendAudio(data,len); break;
             case DEEPGRAM:     if(deepgram!=null)deepgram.sendAudio(data,len); break;
         }
         // سجّل الاستخدام (~62.5ms لكل buffer 16000hz)
-        quota.recordUsage(best,(long)(len/16.0));
+        quota.recordUsage(activeEngine,(long)(len/16.0));
     }
     private void translate(String text){
         TranslationHelper.translateAsync(text,sourceLang,targetLang,t->showOverlay(t));
