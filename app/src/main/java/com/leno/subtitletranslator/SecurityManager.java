@@ -52,6 +52,7 @@ public class SecurityManager {
 
     // ── الفحص الشامل ─────────────────────────────────────────
     public static boolean isSafe(Context ctx) {
+        if (BuildConfig.DEBUG) return true; // debug mode = skip security
         if (isRooted())    return false;
         if (isDebugging()) return false;
         if (isEmulator())  return false;
