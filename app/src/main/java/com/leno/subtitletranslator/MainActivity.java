@@ -93,6 +93,7 @@ public class MainActivity extends AppCompatActivity {
         btnStop.setOnClickListener(v -> stopTranslation());
         btnStop.setEnabled(false);
         btnStop.setAlpha(0.5f);
+        findViewById(R.id.btnSubscribe).setOnClickListener(v -> showUpgradeDialog());
         updateStatus();
     }
 
