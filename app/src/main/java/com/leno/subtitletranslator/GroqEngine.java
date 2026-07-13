@@ -16,7 +16,7 @@ public class GroqEngine {
     private final ByteArrayOutputStream buf=new ByteArrayOutputStream();
     private ResultCallback cb;
     private String apiKey,lang;
-    private static final int FLUSH=16000*2*5; // كل 5 ثواني
+    private static final int FLUSH=16000*2*3; // كل 5 ثواني
     public void start(String key,String language,ResultCallback callback){
         this.apiKey=key;
         this.lang=language.contains("-")?language.split("-")[0]:language;
