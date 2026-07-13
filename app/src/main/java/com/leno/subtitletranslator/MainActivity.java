@@ -77,6 +77,12 @@ public class MainActivity extends AppCompatActivity {
         updateStatus();
     }
 
+    @Override
+    protected void onPause() {
+        super.onPause();
+        userManager.stopTranslation();
+    }
+
     // ─────────────────────── UI Setup ────────────────────────────
 
     private void initUI() {
