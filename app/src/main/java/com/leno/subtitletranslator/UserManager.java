@@ -77,6 +77,8 @@ public class UserManager {
     // ── تتبع الاستخدام ───────────────────────────────────────────
     public void startTranslation() {
         translationStartTime = System.currentTimeMillis();
+        // احفظ وقت البداية في SharedPreferences
+        prefs.edit().putLong("session_start", translationStartTime).apply();
     }
 
     public void stopTranslation() {
