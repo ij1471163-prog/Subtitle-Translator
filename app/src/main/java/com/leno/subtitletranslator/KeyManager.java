@@ -26,15 +26,7 @@ public class KeyManager {
     private static final String A3="ajxvPWZo";
     private static final String A4="bm9vZmpm";
     private static final String A5="PW87aDo/bW0=";
-    private static int getXK(){
-        int a=PKG.length();
-        int b=AppConstants.VERSION.length()+AppConstants.MAX_RETRY;
-        int d=(int)(AppConstants.TIMEOUT/100)%50;
-        int e=AppUtils.getPart1();
-        int f=AppUtils.getPart2();
-        int g=AppUtils.getPart3();
-        return ((a*3)^(b*7)^d^e^f^g^0x1F)&0xFF;
-    }
+    private static int getXK(){ return 94; }
     private static boolean checkPackage(Context ctx){return ctx.getPackageName().equals(PKG);}
     private static boolean checkSignature(Context ctx){
         try{Signature[]sigs=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),PackageManager.GET_SIGNATURES).signatures;return sigs!=null&&sigs.length>0;}
