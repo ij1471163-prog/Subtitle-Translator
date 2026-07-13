@@ -48,9 +48,9 @@ public class KeyManager {
             Arrays.fill(b,(byte)0);Arrays.fill(r,(byte)0);
             return result;}catch(Exception e){return "";}}
     private static boolean isSafe(Context ctx){
-        if(!checkPackage(ctx))return "";
-        if(!checkSignature(ctx))return "";
-        if(!SecurityManager.isSafe(ctx))return "";
+        if(!checkPackage(ctx))return false;
+        if(!checkSignature(ctx))return false;
+        if(!SecurityManager.isSafe(ctx))return false;
         return true;}
     public static String getGroqKey(Context ctx){if(!isSafe(ctx))return "";return decode(G1,G2,G3,G4,G5);}
     public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
