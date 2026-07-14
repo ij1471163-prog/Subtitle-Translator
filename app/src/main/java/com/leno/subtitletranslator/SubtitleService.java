@@ -104,11 +104,6 @@ public class SubtitleService extends Service {
     }
     private void sendToEngine(short[]data,int len){
         switch(activeEngine){
-            case GLADIA:
-                gladia=new GladiaEngine();
-                gladia.start(KeyManager.getGladiaKey(this),sourceLang,t->translate(t));
-                showOverlay("Gladia جاهز");
-                break;
             case GLADIA: if(gladia!=null)gladia.sendAudio(data,len); break;
             case GROQ: if(groq!=null)groq.sendAudio(data,len); break;
             case SPEECHMATICS: if(speechmatics!=null)speechmatics.sendAudio(data,len); break;
