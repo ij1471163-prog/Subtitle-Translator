@@ -62,8 +62,6 @@ public class GladiaEngine {
         for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
         if(!connected||webSocket==null){if(audioQueue.size()<10)audioQueue.offer(pcm);return;}
         byte[]q;while((q=audioQueue.poll())!=null)webSocket.send(ByteString.of(q));
-        byte[]pcm=new byte[len*2];
-        for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
         webSocket.send(ByteString.of(pcm));
     }
     public void stop(){
