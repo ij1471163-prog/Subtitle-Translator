@@ -48,5 +48,11 @@ public class KeyManager {
     public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
     public static String getSpeechmaticsKey(Context ctx){if(!isSafe(ctx))return "";return decode(S1,S2,S3,S4,S5);}
     public static String getAssemblyKey(Context ctx){if(!isSafe(ctx))return "";return decode(A1,A2,A3,A4,A5);}
+    private static final String GEM1="Hw9wHzxmDBBoFy";
+    private static final String GEM2="gwNihuaQQtDTQN";
+    private static final String GEM3="NycmHWwZbDcZcw";
+    private static final String GEM4="g8BzEwZjIXNnMv";
+    private static final String GEM5="E2cdKRMRCQoQJjk=";
+
     public static String getGeminiKey(Context ctx){if(!isSafe(ctx))return "";return decode(GEM1,GEM2,GEM3,GEM4,GEM5);}
 }
