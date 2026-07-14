@@ -153,6 +153,7 @@ public class SubtitleService extends Service {
         },"MicThread").start();
     }
     private void addOverlay(){
+        try{
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
         overlay=new TextView(this);
         overlay.setTextColor(Color.WHITE);overlay.setTextSize(18f);
@@ -161,6 +162,10 @@ public class SubtitleService extends Service {
         int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
         lp.gravity=Gravity.BOTTOM;lp.y=120;wm.addView(overlay,lp);
+        }catch(Exception e){
+            Log.e(TAG,"addOverlay FAILED: "+e.getMessage());
+            overlay=null;
+        }
     }
     private void showOverlay(String t){handler.post(()->{if(overlay!=null)overlay.setText(t);});}
     @Override public int onStartCommand(Intent i,int f,int id){
