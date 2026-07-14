@@ -28,14 +28,16 @@ public class GladiaEngine {
                 if(resp.isSuccessful()&&resp.body()!=null){
                     String url=new JSONObject(resp.body().string()).optString("url","");
                     Log.d(TAG,"Session: "+url);
+                    Log.d(TAG,"Got URL: "+url);
                     if(!url.isEmpty())connectWS(url);
+                    else Log.e(TAG,"Empty URL!");
                 }
             }catch(Exception e){Log.e(TAG,"init: "+e.getMessage());}
         }).start();
     }
     private void connectWS(String url){
         webSocket=client.newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
-            @Override public void onOpen(WebSocket ws,Response r){connected=true;Log.d(TAG,"Connected");}
+            @Override public void onOpen(WebSocket ws,Response r){connected=true;Log.d(TAG,"✅ WebSocket Connected - ready to receive audio");}
             @Override public void onMessage(WebSocket ws,String text){
                 try{
                     JSONObject j=new JSONObject(text);
