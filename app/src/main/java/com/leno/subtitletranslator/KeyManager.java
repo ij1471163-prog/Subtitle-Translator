@@ -21,11 +21,11 @@ public class KeyManager {
     private static final String S3="5FAw4CxEz";
     private static final String S4="ChVpBwcu";
     private static final String S5="N20zBzsaLhs=";
-    private static final String A1="aTpvZmtt";
-    private static final String A2="Omw6bz1s";
-    private static final String A3="ajxvPWZo";
-    private static final String A4="bm9vZmpm";
-    private static final String A5="PW87aDo/bW0=";
+    private static final String A1="aD1qbj1p";
+    private static final String A2="OGo6O21r";
+    private static final String A3="amptbmY7";
+    private static final String A4="bm88PDhq";
+    private static final String A5="aW9pazs6aDo=";
     private static int getXK(){ return 94; }
     private static boolean checkPackage(Context ctx){return ctx.getPackageName().equals(PKG);}
     private static boolean checkSignature(Context ctx){
