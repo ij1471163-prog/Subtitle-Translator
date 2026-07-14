@@ -23,7 +23,7 @@ public class GladiaEngine {
     private void initSession(){
         new Thread(()->{
             try{
-                RequestBody body=RequestBody.create("{\"encoding\":\"wav/pcm\",\"sample_rate\":16000,\"language\":\""+lang+"\"}",MediaType.parse("application/json"));
+                RequestBody body=RequestBody.create("{\"encoding\":\"wav/pcm\",\"sample_rate\":16000}",MediaType.parse("application/json"));
                 Response resp=client.newCall(new Request.Builder().url("https://api.gladia.io/v2/live").header("x-gladia-key",apiKey).post(body).build()).execute();
                 if(resp.isSuccessful()&&resp.body()!=null){
                     String url=new JSONObject(resp.body().string()).optString("url","");
