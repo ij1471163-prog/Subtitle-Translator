@@ -54,6 +54,11 @@ public class KeyManager {
     private static final String GEM4="g8BzEwZjIXNnMv";
     private static final String GEM5="E2cdKRMRCQoQJjk=";
 
+    private static final String GL1="bjo/bj9mZ";
+    private static final String GL2="mhzOGs8Z3";
+    private static final String GL3="NqaWw8cz8";
+    private static final String GL4="7Oz1zajo6";
+    private static final String GL5="PGZubDo6bjg7";
     public static String getGladiaKey(Context ctx){if(!isSafe(ctx))return "";return decode(GL1,GL2,GL3,GL4,GL5);}
 
     public static String getGeminiKey(Context ctx){if(!isSafe(ctx))return "";return decode(GEM1,GEM2,GEM3,GEM4,GEM5);}
