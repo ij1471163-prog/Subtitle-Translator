@@ -5,6 +5,7 @@ import android.util.Log;
 import org.json.JSONObject;
 import java.util.concurrent.TimeUnit;
 import okhttp3.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import okio.ByteString;
 public class GladiaEngine {
     private static final String TAG="GladiaEngine";
@@ -14,6 +15,7 @@ public class GladiaEngine {
     private volatile boolean connected=false,reconnect=true;
     private ResultCallback callback;
     private String apiKey,lang;
+    private final ConcurrentLinkedQueue<byte[]> audioQueue=new ConcurrentLinkedQueue<>();
     public void start(String key,String language,ResultCallback cb){
         this.apiKey=key.trim();this.lang=language.contains("-")?language.split("-")[0]:language;
         this.callback=cb;this.reconnect=true;
@@ -56,7 +58,10 @@ public class GladiaEngine {
         });
     }
     public void sendAudio(short[]data,int len){
-        if(!connected||webSocket==null)return;
+        byte[]pcm=new byte[len*2];
+        for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
+        if(!connected||webSocket==null){if(audioQueue.size()<10)audioQueue.offer(pcm);return;}
+        byte[]q;while((q=audioQueue.poll())!=null)webSocket.send(ByteString.of(q));
         byte[]pcm=new byte[len*2];
         for(int i=0;i<len;i++){pcm[i*2]=(byte)(data[i]&0xFF);pcm[i*2+1]=(byte)((data[i]>>8)&0xFF);}
         webSocket.send(ByteString.of(pcm));
