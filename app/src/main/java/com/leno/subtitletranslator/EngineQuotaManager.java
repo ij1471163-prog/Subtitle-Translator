@@ -9,12 +9,13 @@ import java.util.Locale;
 public class EngineQuotaManager {
 
     // حدود يومية بالدقائق
+    private static final long GLADIA_LIMIT_MS=600*60*1000L;
     private static final long GROQ_LIMIT_MS=7200*60*1000L;
     private static final long SPEECHMATICS_LIMIT_MS  = 300 * 60 * 1000L;
     private static final long ASSEMBLYAI_LIMIT_MS    = 200 * 60 * 1000L;
     private static final long DEEPGRAM_LIMIT_MS      = 200 * 60 * 1000L;
 
-    public enum Engine { GROQ, SPEECHMATICS, ASSEMBLYAI, DEEPGRAM, LOCAL }
+    public enum Engine { GLADIA, GROQ, SPEECHMATICS, ASSEMBLYAI, DEEPGRAM, LOCAL }
 
     private final SharedPreferences prefs;
 
@@ -25,6 +26,7 @@ public class EngineQuotaManager {
 
     // ── اختار المحرك المتاح ──────────────────────────────────
     public Engine getBestEngine() {
+        if (getUsed("gladia")<GLADIA_LIMIT_MS) return Engine.GLADIA;
         if (getUsed("speechmatics") < SPEECHMATICS_LIMIT_MS) return Engine.SPEECHMATICS;
         if (getUsed("assemblyai")   < ASSEMBLYAI_LIMIT_MS)   return Engine.ASSEMBLYAI;
         if (getUsed("deepgram")     < DEEPGRAM_LIMIT_MS)     return Engine.DEEPGRAM;
@@ -57,6 +59,7 @@ public class EngineQuotaManager {
     private String getKey(Engine e) {
         switch (e) {
             case GROQ: return "groq";
+            case GLADIA: return "gladia";
             case SPEECHMATICS: return "speechmatics";
             case ASSEMBLYAI:   return "assemblyai";
             case DEEPGRAM:     return "deepgram";
@@ -70,6 +73,7 @@ public class EngineQuotaManager {
         String last  = prefs.getString("quota_date", "");
         if (!today.equals(last)) {
             prefs.edit()
+                .putLong("gladia",0)
                 .putLong("groq",0)
                 .putLong("speechmatics", 0)
                 .putLong("assemblyai", 0)

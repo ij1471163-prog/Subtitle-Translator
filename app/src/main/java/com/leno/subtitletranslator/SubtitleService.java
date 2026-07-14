@@ -33,6 +33,7 @@ public class SubtitleService extends Service {
     private TextView overlay;
     private AudioRecord micRecord;
     private AudioCaptureService audioCapture;
+    private GladiaEngine gladia;
     private GroqEngine groq;
     private SpeechmaticsEngine speechmatics;
     private AssemblyAIEngine assemblyai;
@@ -70,6 +71,11 @@ public class SubtitleService extends Service {
         activeEngine=best;
         Log.d(TAG,"Best engine: "+best);
         switch(best){
+            case GLADIA:
+                gladia=new GladiaEngine();
+                gladia.start(KeyManager.getGladiaKey(this),sourceLang,t->translate(t));
+                showOverlay("Gladia جاهز");
+                break;
             case GROQ:
                 groq=new GroqEngine();
                 groq.start(KeyManager.getGroqKey(this),sourceLang,t->translate(t));
@@ -98,6 +104,12 @@ public class SubtitleService extends Service {
     }
     private void sendToEngine(short[]data,int len){
         switch(activeEngine){
+            case GLADIA:
+                gladia=new GladiaEngine();
+                gladia.start(KeyManager.getGladiaKey(this),sourceLang,t->translate(t));
+                showOverlay("Gladia جاهز");
+                break;
+            case GLADIA: if(gladia!=null)gladia.sendAudio(data,len); break;
             case GROQ: if(groq!=null)groq.sendAudio(data,len); break;
             case SPEECHMATICS: if(speechmatics!=null)speechmatics.sendAudio(data,len); break;
             case ASSEMBLYAI:   if(assemblyai!=null)assemblyai.sendAudio(data,len); break;
@@ -162,6 +174,7 @@ public class SubtitleService extends Service {
     }
     @Override public void onDestroy(){
         running=false;
+        if(gladia!=null)gladia.stop();
         if(groq!=null)groq.stop();
         if(speechmatics!=null)speechmatics.stop();
         if(assemblyai!=null)assemblyai.stop();
