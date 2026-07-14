@@ -9,7 +9,7 @@ import okio.ByteString;
 
 public class AssemblyAIEngine {
     private static final String TAG="AssemblyAIEngine";
-    private static final String WS_URL="wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000";
+    private static final String WS_URL="wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&encoding=pcm_s16le&token=";
     public interface ResultCallback{void onResult(String text);}
     private OkHttpClient client;
     private WebSocket webSocket;
@@ -30,8 +30,7 @@ public class AssemblyAIEngine {
     private void connect(){
         if(!reconnect)return;
         Request req=new Request.Builder()
-            .url(WS_URL)
-            .header("Authorization",apiKey)
+            .url(WS_URL+apiKey)
             .build();
         webSocket=client.newWebSocket(req,new WebSocketListener(){
             @Override public void onOpen(WebSocket ws,Response r){
