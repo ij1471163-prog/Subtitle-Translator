@@ -44,10 +44,6 @@ public class KeyManager {
         if(!checkSignature(ctx))return false;
         if(!SecurityManager.isSafe(ctx))return false;
         return true;}
-    public static String getGroqKey(Context ctx){if(!isSafe(ctx))return "";return decode(G1,G2,G3,G4,G5);}
-    public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
-    public static String getSpeechmaticsKey(Context ctx){if(!isSafe(ctx))return "";return decode(S1,S2,S3,S4,S5);}
-    public static String getAssemblyKey(Context ctx){if(!isSafe(ctx))return "";return decode(A1,A2,A3,A4,A5);}
     private static final String GEM1="Hw9wHzxmDBBoFy";
     private static final String GEM2="gwNihuaQQtDTQN";
     private static final String GEM3="NycmHWwZbDcZcw";

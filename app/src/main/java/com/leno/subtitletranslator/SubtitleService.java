@@ -34,9 +34,6 @@ public class SubtitleService extends Service {
     private AudioRecord micRecord;
     private AudioCaptureService audioCapture;
     private GladiaEngine gladia;
-    private GroqEngine groq;
-    private SpeechmaticsEngine speechmatics;
-    private AssemblyAIEngine assemblyai;
     private DeepgramEngine deepgram;
     private EngineQuotaManager quota;
     private EngineQuotaManager.Engine activeEngine=EngineQuotaManager.Engine.LOCAL;
@@ -76,21 +73,6 @@ public class SubtitleService extends Service {
                 gladia.start(KeyManager.getGladiaKey(this),sourceLang,t->translate(t));
                 showOverlay("Gladia جاهز");
                 break;
-            case GROQ:
-                groq=new GroqEngine();
-                groq.start(KeyManager.getGroqKey(this),sourceLang,t->translate(t));
-                showOverlay("Groq جاهز");
-                break;
-            case SPEECHMATICS:
-                speechmatics=new SpeechmaticsEngine();
-                speechmatics.start(KeyManager.getSpeechmaticsKey(this),sourceLang,t->translate(t));
-                showOverlay("Speechmatics جاهز");
-                break;
-            case ASSEMBLYAI:
-                assemblyai=new AssemblyAIEngine();
-                assemblyai.start(KeyManager.getAssemblyKey(this),t->translate(t));
-                showOverlay("AssemblyAI جاهز");
-                break;
             case DEEPGRAM:
                 deepgram=new DeepgramEngine();
                 deepgram.start(KeyManager.getDeepgramKey(this),sourceLang,t->translate(t));
@@ -105,9 +87,6 @@ public class SubtitleService extends Service {
     private void sendToEngine(short[]data,int len){
         switch(activeEngine){
             case GLADIA: if(gladia!=null)gladia.sendAudio(data,len); break;
-            case GROQ: if(groq!=null)groq.sendAudio(data,len); break;
-            case SPEECHMATICS: if(speechmatics!=null)speechmatics.sendAudio(data,len); break;
-            case ASSEMBLYAI:   if(assemblyai!=null)assemblyai.sendAudio(data,len); break;
             case DEEPGRAM:     if(deepgram!=null)deepgram.sendAudio(data,len); break;
         }
         // سجّل الاستخدام (~62.5ms لكل buffer 16000hz)
@@ -175,9 +154,6 @@ public class SubtitleService extends Service {
     @Override public void onDestroy(){
         running=false;
         if(gladia!=null)gladia.stop();
-        if(groq!=null)groq.stop();
-        if(speechmatics!=null)speechmatics.stop();
-        if(assemblyai!=null)assemblyai.stop();
         if(deepgram!=null)deepgram.stop();
         if(audioCapture!=null)audioCapture.stop();
         if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
