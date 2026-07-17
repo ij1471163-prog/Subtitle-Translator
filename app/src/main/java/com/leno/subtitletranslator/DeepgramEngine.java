@@ -10,7 +10,7 @@ import okio.ByteString;
 
 public class DeepgramEngine {
     private static final String TAG="DeepgramEngine";
-    private static final String WS_BASE="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&utterance_end_ms=1000";
+    private static final String WS_BASE="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&utterance_end_ms=1000&model=nova-2";
 
     public interface ResultCallback{void onResult(String text);}
 
