@@ -39,7 +39,7 @@ public class DeepgramEngine {
         if(!reconnect)return;
         ready=false;
         String dgLang=toDeepgramLang(sourceLang);
-        String url=WS_BASE+"&detect_language=true";
+        String url=WS_BASE+"&language="+dgLang;
         Request req=new Request.Builder().url(url).header("Authorization","Token "+apiKey).build();
         webSocket=client.newWebSocket(req,new WebSocketListener(){
             @Override public void onOpen(WebSocket ws,Response r){connected=true;ready=true;Log.d(TAG,"✅ Connected lang="+dgLang);}
