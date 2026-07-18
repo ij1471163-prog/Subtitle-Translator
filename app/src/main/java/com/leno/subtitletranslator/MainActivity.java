@@ -18,6 +18,7 @@ import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.SeekBar;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -39,6 +40,8 @@ public class MainActivity extends AppCompatActivity {
     private Button      btnStart, btnStop;
     private ProgressBar progressBar;
     private UserManager userManager;
+    private SeekBar seekFontSize;
+    private Spinner spinnerPosition;
     private BillingManager billingManager;
 
     // ── AudioPlaybackCapture ─────────────────────────────────────
@@ -98,6 +101,31 @@ public class MainActivity extends AppCompatActivity {
         btnStart.setOnClickListener(v -> attemptStart());
         btnStop.setOnClickListener(v -> stopTranslation());
         btnStop.setEnabled(false);
+        seekFontSize = findViewById(R.id.seekFontSize);
+        spinnerPosition = findViewById(R.id.spinnerPosition);
+
+        // خيارات المكان
+        ArrayAdapter<CharSequence> pos = ArrayAdapter.createFromResource(
+            this, R.array.subtitle_position, android.R.layout.simple_spinner_item);
+        pos.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerPosition.setAdapter(pos);
+
+        // حفظ حجم الخط
+        seekFontSize.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(SeekBar s,int p,boolean u){
+                getPrefs().edit().putInt("font_size",p+10).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar s){}
+            @Override public void onStopTrackingTouch(SeekBar s){}
+        });
+
+        // حفظ المكان
+        spinnerPosition.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(android.widget.AdapterView<?> p,android.view.View v,int pos,long id){
+                getPrefs().edit().putInt("subtitle_position",pos).apply();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> p){}
+        });
         btnStop.setAlpha(0.5f);
         findViewById(R.id.btnSubscribe).setOnClickListener(v -> showUpgradeDialog());
         updateStatus();
@@ -241,7 +269,32 @@ public class MainActivity extends AppCompatActivity {
         userManager.stopTranslation();
         tvStatus.setText("⭕ متوقف");
         btnStart.setEnabled(true); btnStart.setAlpha(1f);
-        btnStop.setEnabled(false); btnStop.setAlpha(0.4f);
+        btnStop.setEnabled(false);
+        seekFontSize = findViewById(R.id.seekFontSize);
+        spinnerPosition = findViewById(R.id.spinnerPosition);
+
+        // خيارات المكان
+        ArrayAdapter<CharSequence> pos = ArrayAdapter.createFromResource(
+            this, R.array.subtitle_position, android.R.layout.simple_spinner_item);
+        pos.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerPosition.setAdapter(pos);
+
+        // حفظ حجم الخط
+        seekFontSize.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(SeekBar s,int p,boolean u){
+                getPrefs().edit().putInt("font_size",p+10).apply();
+            }
+            @Override public void onStartTrackingTouch(SeekBar s){}
+            @Override public void onStopTrackingTouch(SeekBar s){}
+        });
+
+        // حفظ المكان
+        spinnerPosition.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+            @Override public void onItemSelected(android.widget.AdapterView<?> p,android.view.View v,int pos,long id){
+                getPrefs().edit().putInt("subtitle_position",pos).apply();
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> p){}
+        }); btnStop.setAlpha(0.4f);
         updateStatus();
     }
 
