@@ -136,7 +136,18 @@ public class SubtitleService extends Service {
             overlay=null;
         }
     }
-    private void showOverlay(String t){handler.post(()->{if(overlay!=null)overlay.setText(t);});}
+    private void showOverlay(String t){
+        handler.post(()->{
+            if(overlay==null)return;
+            overlay.setText(t);
+            overlay.setAlpha(1f);
+            // اختفاء تلقائي بعد 3 ثواني
+            handler.removeCallbacksAndMessages("hide");
+            handler.postAtTime(()->{
+                if(overlay!=null)overlay.setText("");
+            },"hide",android.os.SystemClock.uptimeMillis()+3000);
+        });
+    }
     @Override public int onStartCommand(Intent i,int f,int id){
         if(i!=null&&ACTION_STOP.equals(i.getAction())){stopSelf();return START_NOT_STICKY;}
         return START_STICKY;
