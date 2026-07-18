@@ -93,7 +93,7 @@ public class SubtitleService extends Service {
         quota.recordUsage(activeEngine,(long)(len/16.0));
     }
     private void translate(String text){
-        TranslationHelper.translateAsync(text,sourceLang,targetLang,t->showOverlay(t));
+        MLKitTranslator.translate(text,sourceLang,targetLang,t->showOverlay(t));
     }
     private void startAudioCapture(){
         Intent proj=MainActivity.getProjectionData();
