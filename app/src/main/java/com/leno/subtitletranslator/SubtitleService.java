@@ -93,16 +93,13 @@ public class SubtitleService extends Service {
         quota.recordUsage(activeEngine,(long)(len/16.0));
     }
     private void translate(String text){
-        UserManager um=new UserManager(this);
-        if(um.getCurrentTier()!=UserManager.Tier.FREE){
-            // PLUS/PRO: Gemini للترجمة
-            String gemKey=KeyManager.getGeminiKey(this);
-            if(!gemKey.isEmpty()){
-                GeminiTranslator.translate(text,targetLang,gemKey,t->showOverlay(t));
-                return;
-            }
+        // استخدم Gemini دائماً (أدق)
+        String gemKey=KeyManager.getGeminiKey(this);
+        if(!gemKey.isEmpty()){
+            GeminiTranslator.translate(text,targetLang,gemKey,t->showOverlay(t));
+            return;
         }
-        // FREE: MyMemory مجاني
+        // Fallback: MyMemory
         TranslationHelper.translateAsync(text,sourceLang,targetLang,t->showOverlay(t));
     }
     private void startAudioCapture(){
