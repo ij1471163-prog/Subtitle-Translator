@@ -93,13 +93,6 @@ public class SubtitleService extends Service {
         quota.recordUsage(activeEngine,(long)(len/16.0));
     }
     private void translate(String text){
-        // استخدم Gemini دائماً (أدق)
-        String gemKey=KeyManager.getGeminiKey(this);
-        if(!gemKey.isEmpty()){
-            GeminiTranslator.translate(text,targetLang,gemKey,t->showOverlay(t));
-            return;
-        }
-        // Fallback: MyMemory
         TranslationHelper.translateAsync(text,sourceLang,targetLang,t->showOverlay(t));
     }
     private void startAudioCapture(){
