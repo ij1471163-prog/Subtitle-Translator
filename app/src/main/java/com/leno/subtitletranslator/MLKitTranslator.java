@@ -24,9 +24,7 @@ public class MLKitTranslator {
         }
 
         final Translator t = translator;
-        DownloadConditions conditions = new DownloadConditions.Builder().build();
-
-        t.downloadModelIfNeeded(conditions)
+        t.downloadModelIfNeeded()
             .addOnSuccessListener(v -> {
                 t.translate(text)
                     .addOnSuccessListener(result -> {

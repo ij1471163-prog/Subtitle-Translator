@@ -150,8 +150,8 @@ public class SubtitleService extends Service {
         overlay.setBackgroundColor(Color.TRANSPARENT);overlay.setPadding(20,8,20,8);overlay.setMaxLines(2);
         int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams lp=new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT,WindowManager.LayoutParams.WRAP_CONTENT,type,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);
-        lp.gravity=gravity|Gravity.CENTER_HORIZONTAL;
-        lp.y=posIndex==0?120:0;wm.addView(overlay,lp);
+        lp.gravity=Gravity.BOTTOM;
+        lp.y=120;wm.addView(overlay,lp);
         }catch(Exception e){
             Log.e(TAG,"addOverlay FAILED: "+e.getMessage());
             overlay=null;
