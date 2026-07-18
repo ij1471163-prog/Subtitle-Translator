@@ -84,7 +84,27 @@ public class SubtitleService extends Service {
                 break;
         }
     }
+    // Smart Sleep
+    private long lastAudioTime = 0;
+    private boolean sleeping = false;
+
+    private boolean hasAudio(short[]data,int len){
+        long sum=0;
+        for(int i=0;i<len;i++) sum+=Math.abs(data[i]);
+        return (sum/len) > 200; // threshold
+    }
+
     private void sendToEngine(short[]data,int len){
+        // تحقق إذا في صوت حقيقي
+        if(!hasAudio(data,len)){
+            long silent = System.currentTimeMillis()-lastAudioTime;
+            // سكوت 3 ثواني = وقف الإرسال
+            if(silent>3000) sleeping=true;
+            if(sleeping) return;
+        } else {
+            lastAudioTime=System.currentTimeMillis();
+            sleeping=false;
+        }
         switch(activeEngine){
             case GLADIA: if(gladia!=null)gladia.sendAudio(data,len); break;
             case DEEPGRAM:     if(deepgram!=null)deepgram.sendAudio(data,len); break;
