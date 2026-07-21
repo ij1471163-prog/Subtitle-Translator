@@ -43,7 +43,7 @@ public class SubtitleService extends Service {
     private String sourceLang="en-US",targetLang="ar";
     private final BroadcastReceiver screenOff=new BroadcastReceiver(){
         @Override public void onReceive(Context c,Intent i){
-            if(Intent.ACTION_SCREEN_OFF.equals(i.getAction()))stopSelf();
+            // لا نوقف الخدمة عند قفل الشاشة
         }
     };
     @Override public void onCreate(){
