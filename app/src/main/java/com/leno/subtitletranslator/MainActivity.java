@@ -272,23 +272,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatus.setText("⭕ متوقف");
         btnStart.setEnabled(true); btnStart.setAlpha(1f);
         btnStop.setEnabled(false);
-        seekFontSize = findViewById(R.id.seekFontSize);
-        spinnerPosition = findViewById(R.id.spinnerPosition);
 
-        // خيارات المكان
-        ArrayAdapter<CharSequence> pos = ArrayAdapter.createFromResource(
-            this, R.array.subtitle_position, android.R.layout.simple_spinner_item);
-        pos.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerPosition.setAdapter(pos);
-
-        // حفظ حجم الخط
-        seekFontSize.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener(){
-            @Override public void onProgressChanged(SeekBar s,int p,boolean u){
-                getPrefs().edit().putInt("font_size",p+10).apply();
-            }
-            @Override public void onStartTrackingTouch(SeekBar s){}
-            @Override public void onStopTrackingTouch(SeekBar s){}
-        });
 
         // حفظ المكان
         spinnerPosition.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
