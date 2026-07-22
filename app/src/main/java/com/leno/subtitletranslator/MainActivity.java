@@ -265,7 +265,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void stopTranslation() {
-        stopService(new Intent(this, SubtitleService.class));
+        Intent stopIntent = new Intent(this, SubtitleService.class);
+        stopIntent.setAction(SubtitleService.ACTION_STOP);
+        startService(stopIntent);
         userManager.stopTranslation();
         tvStatus.setText("⭕ متوقف");
         btnStart.setEnabled(true); btnStart.setAlpha(1f);
