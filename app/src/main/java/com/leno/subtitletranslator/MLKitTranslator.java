@@ -6,7 +6,11 @@ import java.util.Map;
 
 public class MLKitTranslator {
     private static final String TAG = "MLKitTranslator";
-    private static final Map<String, Translator> cache = new HashMap<>();
+    private static final Map<String, Translator> cache = new java.util.LinkedHashMap<String,Translator>(4,0.75f,true){
+        protected boolean removeEldestEntry(java.util.Map.Entry<String,Translator> e){
+            if(size()>3){e.getValue().close();return true;}return false;
+        }
+    };
 
     public interface Callback { void onResult(String text); }
 
@@ -24,6 +28,7 @@ public class MLKitTranslator {
         }
 
         final Translator t = translator;
+        // تحقق إذا الموديل محمّل مسبقاً
         t.downloadModelIfNeeded()
             .addOnSuccessListener(v -> {
                 t.translate(text)

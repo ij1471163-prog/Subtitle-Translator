@@ -17,6 +17,8 @@ public class DeepgramEngine {
     private OkHttpClient client;
     private WebSocket webSocket;
     private volatile boolean connected=false,reconnect=true,ready=false;
+    private int retryCount=0;
+    private static final int MAX_RETRY=5;
     private ResultCallback callback;
     private String apiKey;
     private String sourceLang="en-US";
@@ -42,7 +44,7 @@ public class DeepgramEngine {
         String url=WS_BASE+"&language="+dgLang;
         Request req=new Request.Builder().url(url).header("Authorization","Token "+apiKey).build();
         webSocket=client.newWebSocket(req,new WebSocketListener(){
-            @Override public void onOpen(WebSocket ws,Response r){connected=true;ready=true;Log.d(TAG,"✅ Connected lang="+dgLang);}
+            @Override public void onOpen(WebSocket ws,Response r){connected=true;ready=true;retryCount=0;Log.d(TAG,"✅ Connected lang="+dgLang);}
             @Override public void onMessage(WebSocket ws,String text){
                 try{
                     JSONObject j=new JSONObject(text);

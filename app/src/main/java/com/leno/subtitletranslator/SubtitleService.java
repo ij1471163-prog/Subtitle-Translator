@@ -160,16 +160,15 @@ public class SubtitleService extends Service {
             overlay=null;
         }
     }
+    private final Runnable hideRunnable=()->{ if(overlay!=null)overlay.setText(""); };
+
     private void showOverlay(String t){
         handler.post(()->{
             if(overlay==null)return;
             overlay.setText(t);
-            overlay.setAlpha(1f);
-            // اختفاء تلقائي بعد 3 ثواني
-            handler.removeCallbacksAndMessages("hide");
-            handler.postAtTime(()->{
-                if(overlay!=null)overlay.setText("");
-            },"hide",android.os.SystemClock.uptimeMillis()+3000);
+            // احذف أي hide قديم قبل ما تضيف جديد
+            handler.removeCallbacks(hideRunnable);
+            handler.postDelayed(hideRunnable,3000);
         });
     }
     @Override public int onStartCommand(Intent i,int f,int id){
