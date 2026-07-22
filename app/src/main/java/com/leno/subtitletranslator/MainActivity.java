@@ -261,7 +261,7 @@ public class MainActivity extends AppCompatActivity {
         tvStatus.setText("🟢 الترجمة شغالة — ارجع للفيديو");
         btnStart.setEnabled(false); btnStart.setAlpha(0.4f);
         btnStop.setEnabled(true);  btnStop.setAlpha(1f);
-        Toast.makeText(this, "شغّال ✅ ارجع للفيديو", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "شغّال ✅ ارجع للفيديو - الميكروفون يشتغل في الخلفية", Toast.LENGTH_LONG).show();
     }
 
     private void stopTranslation() {
