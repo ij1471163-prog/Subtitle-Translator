@@ -145,7 +145,10 @@ public class SubtitleService extends Service {
         try{
         wm=(WindowManager)getSystemService(WINDOW_SERVICE);
         overlay=new TextView(this);
-        overlay.setTextColor(Color.WHITE);overlay.setTextSize(18f);
+        android.content.SharedPreferences sp=getSharedPreferences(MainActivity.PREFS,MODE_PRIVATE);
+        int fs=sp.getInt("font_size",18);
+        int pi=sp.getInt("subtitle_position",0);
+        overlay.setTextColor(Color.WHITE);overlay.setTextSize(fs);
         overlay.setGravity(Gravity.CENTER);overlay.setShadowLayer(8f,0f,2f,Color.BLACK);
         overlay.setBackgroundColor(Color.TRANSPARENT);overlay.setPadding(20,8,20,8);overlay.setMaxLines(2);
         int type=Build.VERSION.SDK_INT>=Build.VERSION_CODES.O?WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY:WindowManager.LayoutParams.TYPE_PHONE;
