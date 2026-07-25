@@ -82,7 +82,8 @@ public class SubtitleService extends Service {
                     return;
                 }
                 deepgram=new DeepgramEngine();
-                deepgram.start(KeyManager.getDeepgramKey(this),sourceLang,t->translate(t));
+                String dgKey=tier==UserManager.Tier.PRO?KeyManager.getDeepgramKey(this):KeyManager.getDeepgramPlusKey(this);
+                deepgram.start(dgKey,sourceLang,t->translate(t));
                 showOverlay("Deepgram جاهز");
                 break;
             default:
