@@ -11,11 +11,11 @@ public class KeyManager {
     private static final String G3="EzkpHRAP";
     private static final String G4="E28aPS0k";
     private static final String G5="CRk6JzxtGAcSbRoJNx83aWoLGyZvGw4UDzoHCzUGDgg=";
-    private static final String D1="amxsbj1n";
-    private static final String D2="aDs6OGlm";
-    private static final String D3="O21sZmlt";
-    private static final String D4="aW5ramdsPDht";
-    private static final String D5="bG5nbz9maj9rbm1rbQ==";
+    private static final String D1="PW4/Om5vaWc";
+    private static final String D2="/PzpuaW06Zm";
+    private static final String D3="xtamhsOmk/P";
+    private static final String D4="2g/OmhrZz06";
+    private static final String D5="OGpnO2lmaQ==";
     private static final String S1="HRg6Eiw";
     private static final String S2="NHSs7OCg";
     private static final String S3="5FAw4CxEz";
