@@ -64,6 +64,8 @@ public class SubtitleService extends Service {
         startAudioCapture();
     }
     private void startBestEngine(){
+        UserManager um = new UserManager(this);
+        UserManager.Tier tier = um.getCurrentTier();
         EngineQuotaManager.Engine best=quota.getBestEngine();
         activeEngine=best;
         Log.d(TAG,"Best engine: "+best);
@@ -74,6 +76,11 @@ public class SubtitleService extends Service {
                 showOverlay("Gladia جاهز");
                 break;
             case DEEPGRAM:
+                // Deepgram للـ PLUS و PRO فقط
+                if(tier == UserManager.Tier.FREE){
+                    showOverlay("يتطلب اشتراك PLUS");
+                    return;
+                }
                 deepgram=new DeepgramEngine();
                 deepgram.start(KeyManager.getDeepgramKey(this),sourceLang,t->translate(t));
                 showOverlay("Deepgram جاهز");
