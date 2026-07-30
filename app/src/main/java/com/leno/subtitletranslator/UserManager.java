@@ -33,7 +33,7 @@ public class UserManager {
 
     // ── Tier الحالي ──────────────────────────────────────────────
     public Tier getCurrentTier() {
-        String tier = prefs.getString("tier", "FREE");
+        String tier = prefs.getString("tier", "PLUS"); // DEBUG
         try { return Tier.valueOf(tier); }
         catch (Exception e) { return Tier.FREE; }
     }
