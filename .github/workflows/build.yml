@@ -25,12 +25,26 @@ jobs:
           cache: 'gradle'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
+
       - name: Build Debug
         if: ${{ inputs.build_target == 'debug' }}
         run: ./gradlew assembleDebug --no-daemon
-      - name: Build Release
+
+      - name: Sign & Build Release
         if: ${{ inputs.build_target == 'release' }}
-        run: ./gradlew assembleRelease --no-daemon
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASS \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+
       - uses: actions/upload-artifact@v4
         with:
           name: APK-${{ inputs.build_target }}
