@@ -55,6 +55,12 @@ public class KeyManager {
     private static final String GL3="NqaWw8cz8";
     private static final String GL4="7Oz1zajo6";
     private static final String GL5="PGZubDo6bjg7";
+    private static final String DP1="amxsbj1naDs";
+    private static final String DP2="6OGlmO21sZm";
+    private static final String DP3="ltaW5ramdsP";
+    private static final String DP4="DhtbG5nbz9m";
+    private static final String DP5="aj9rbm1rbQ==";
+
     public static String getDeepgramPlusKey(Context ctx){if(!isSafe(ctx))return "";return decode(DP1,DP2,DP3,DP4,DP5);}
     public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
 
