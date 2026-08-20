@@ -12,7 +12,7 @@ public class DeepgramEngine {
     private static final String TAG="DeepgramEngine";
     private static final String WS_BASE="wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&punctuate=true&interim_results=true&utterance_end_ms=1000&model=nova-2&vad_events=true&smart_format=true";
 
-    public interface ResultCallback{void onResult(String text);}
+    public interface ResultCallback{ void onResult(String text, boolean isFinal); }
 
     private OkHttpClient client;
     private WebSocket webSocket;
@@ -22,9 +22,10 @@ public class DeepgramEngine {
     private ResultCallback callback;
     private String apiKey;
     private String sourceLang="en-US";
+    private static final boolean DEBUG_LOG=false;
 
     public void start(String key,String sourceLangCode,ResultCallback cb){
-        this.apiKey=key;this.callback=cb;this.reconnect=true;
+        this.apiKey=key;this.callback=cb;this.reconnect=true;this.retryCount=0;
         this.sourceLang=(sourceLangCode!=null&&!sourceLangCode.isEmpty())?sourceLangCode:"en-US";
         client=new OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(0,TimeUnit.SECONDS).pingInterval(20,TimeUnit.SECONDS).build();
         connect();
@@ -49,20 +50,32 @@ public class DeepgramEngine {
                 try{
                     JSONObject j=new JSONObject(text);
                     if(!j.has("channel"))return;
-                    boolean isFinal=j.optBoolean("is_final",false);
-                    if(!isFinal)return;
                     JSONObject channel=j.getJSONObject("channel");
                     if(channel.getJSONArray("alternatives").length()==0)return;
                     String t=channel.getJSONArray("alternatives").getJSONObject(0).optString("transcript","");
                     if(t.trim().isEmpty())return;
-                    if(callback!=null){Log.d(TAG,"transcript(final): "+t);callback.onResult(t);}
+                    boolean isFinal=j.optBoolean("is_final",false);
+                    if(callback!=null){
+                        if(DEBUG_LOG) Log.d(TAG, isFinal? "transcript(final): "+t : "transcript(interim): "+t);
+                        callback.onResult(t,isFinal);
+                    }
                 }catch(Exception e){Log.w(TAG,"parse: "+e.getMessage());}
             }
             @Override public void onFailure(WebSocket ws,Throwable t,Response r){
                 connected=false;ready=false;Log.e(TAG,"failure: "+t.getMessage());
                 if(r!=null&&r.code()==401){reconnect=false;Log.e(TAG,"Invalid API Key");return;}
                 if(r!=null&&r.code()==400){reconnect=false;Log.e(TAG,"⚠️ رمز اللغة '"+dgLang+"' غير مدعوم من Deepgram");return;}
-                if(reconnect)new Handler(Looper.getMainLooper()).postDelayed(()->connect(),3000);
+                if(!reconnect)return;
+                // FIX: retryCount/MAX_RETRY كانوا معرّفين بدون استخدام فعلي - كان يعيد المحاولة للأبد كل 3 ثواني
+                retryCount++;
+                if(retryCount>MAX_RETRY){
+                    reconnect=false;
+                    Log.e(TAG,"تجاوزنا الحد الأقصى لمحاولات إعادة الاتصال ("+MAX_RETRY+") - توقفنا عن المحاولة");
+                    return;
+                }
+                long delay=Math.min(3000L*retryCount,15000L); // backoff تدريجي بدل تكرار ثابت كل 3 ثواني
+                Log.w(TAG,"إعادة محاولة الاتصال #"+retryCount+"/"+MAX_RETRY+" بعد "+delay+"ms");
+                new Handler(Looper.getMainLooper()).postDelayed(()->connect(),delay);
             }
             @Override public void onClosed(WebSocket ws,int code,String reason){connected=false;ready=false;Log.d(TAG,"closed: "+reason);}
         });
