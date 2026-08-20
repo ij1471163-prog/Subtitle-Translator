@@ -1,4 +1,5 @@
 package com.leno.subtitletranslator;
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -9,6 +10,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.media.AudioFormat;
@@ -24,11 +27,14 @@ import android.view.Gravity;
 import android.view.WindowManager;
 import android.widget.TextView;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
+import java.util.concurrent.atomic.AtomicInteger;
 public class SubtitleService extends Service {
     private static final String TAG="SubtitleService";
     private static final String CHANNEL_ID="subtitle_ch";
     private static final int NOTIF_ID=1001;
     public static final String ACTION_STOP="com.leno.subtitletranslator.STOP";
+    private static final long WAKELOCK_SLICE_MS=10*60*1000L;
     private WindowManager wm;
     private TextView overlay;
     private AudioRecord micRecord;
@@ -53,16 +59,47 @@ public class SubtitleService extends Service {
         targetLang=p.getString(MainActivity.KEY_TARGET_LANG,"ar");
         PowerManager pm=(PowerManager)getSystemService(POWER_SERVICE);
         wakeLock=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"ST::lock");
-        wakeLock.acquire(3600000L);
-        registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        wakeLock.acquire(WAKELOCK_SLICE_MS);
+        scheduleWakeLockRenewal();
+
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.TIRAMISU){
+            registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF),Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(screenOff,new IntentFilter(Intent.ACTION_SCREEN_OFF));
+        }
+
         createChannel();
-        startForeground(NOTIF_ID,buildNotif());
+        startForegroundCompat();
         addOverlay();
         running=true;
         quota=new EngineQuotaManager(this);
         startBestEngine();
         startAudioCapture();
     }
+
+    private void startForegroundCompat(){
+        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.Q){
+            int type=ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+            startForeground(NOTIF_ID,buildNotif(),type);
+        } else {
+            startForeground(NOTIF_ID,buildNotif());
+        }
+    }
+
+    private void scheduleWakeLockRenewal(){
+        handler.postDelayed(()->{
+            if(!running) return;
+            try{
+                if(wakeLock!=null){
+                    if(wakeLock.isHeld()) wakeLock.release();
+                    wakeLock.acquire(WAKELOCK_SLICE_MS);
+                }
+            }catch(Exception e){ Log.e(TAG,"wakelock renew failed: "+e.getMessage()); }
+            scheduleWakeLockRenewal();
+        },WAKELOCK_SLICE_MS-60*1000L);
+    }
+
     private void startBestEngine(){
         UserManager um = new UserManager(this);
         UserManager.Tier tier = um.getCurrentTier();
@@ -83,7 +120,7 @@ public class SubtitleService extends Service {
                 }
                 deepgram=new DeepgramEngine();
                 String dgKey=tier==UserManager.Tier.PRO?KeyManager.getDeepgramKey(this):KeyManager.getDeepgramPlusKey(this);
-                deepgram.start(dgKey,sourceLang,t->translate(t));
+                deepgram.start(dgKey,sourceLang,(text,isFinal)->handleTranscript(text,isFinal));
                 showOverlay("Deepgram جاهز");
                 break;
             default:
@@ -92,9 +129,9 @@ public class SubtitleService extends Service {
                 break;
         }
     }
-    // Smart Sleep
-    private long lastAudioTime = 0;
-    private boolean sleeping = false;
+    // Smart Sleep - بدون أي تغيير
+    private volatile long lastAudioTime = 0;
+    private volatile boolean sleeping = false;
 
     private boolean hasAudio(short[]data,int len){
         long sum=0;
@@ -120,13 +157,89 @@ public class SubtitleService extends Service {
         // سجّل الاستخدام (~62.5ms لكل buffer 16000hz)
         quota.recordUsage(activeEngine,(long)(len/16.0));
     }
-    private void translate(String text){
-        MLKitTranslator.translate(text,sourceLang,targetLang,t->showOverlay(t));
+
+    // ===================== نظام توقيت الكابشن الحي (Netflix-style) =====================
+    // FIX: تحولت من trailing debounce إلى throttle.
+    // قبل: كل interim جديد يلغي المؤقت ويبدأ من الصفر - أثناء كلام مستمر (interim كل ~200-300ms)
+    // المؤقت ما يفضل يوصل يصفّر أبداً، فالترجمة ما تتحرك إلا بعد سكوت فعلي أو final.
+    // الحين: أول interim بعد فترة هدوء يجدول ترجمة بعد INTERIM_DEBOUNCE_MS، وأي interim
+    // يوصل أثناء الانتظار بس يحدّث النص المخزّن بدون ما يعيد الجدولة - فتصير الترجمة تتحدث
+    // بمعدل ثابت أثناء الكلام المستمر (طلب واحد كل ~500ms تقريباً) بدل ما تنتظر توقف الكلام بالكامل.
+
+    private static final long INTERIM_DEBOUNCE_MS=500;
+    private static final long CAPTION_FINAL_HOLD_MS=1200;
+    private static final long CAPTION_INTERIM_SAFETY_MS=1800;
+
+    private final AtomicInteger transcriptSeq=new AtomicInteger(0); // يمنع نتيجة ترجمة متأخرة تكتب فوق نص أحدث
+    private volatile String pendingInterimText=null;
+    private volatile boolean interimScheduled=false; // FIX: يميّز "فيه ترجمة مجدولة بالفعل" عشان نسوي throttle مو debounce
+
+    private final Runnable interimTranslateRunnable=()->{
+        interimScheduled=false;
+        String t=pendingInterimText;
+        if(t==null||t.trim().isEmpty())return;
+        int seq=transcriptSeq.incrementAndGet();
+        translateAndShow(t,false,seq);
+    };
+
+    private final Runnable hideCaptionRunnable=()->{ if(overlay!=null) overlay.setText(""); };
+
+    /** يُستدعى من Deepgram لكل نتيجة (interim أو final). */
+    private void handleTranscript(String text,boolean isFinal){
+        if(text==null||text.trim().isEmpty())return;
+        if(isFinal){
+            handler.removeCallbacks(interimTranslateRunnable);
+            interimScheduled=false;
+            pendingInterimText=null;
+            int seq=transcriptSeq.incrementAndGet();
+            translateAndShow(text,true,seq);
+        } else {
+            if(text.equals(pendingInterimText))return; // نفس النص بالضبط، تجاهل
+            pendingInterimText=text;
+            if(!interimScheduled){ // FIX: throttle - يجدول مرة وحدة، ما يعيد الجدولة مع كل تحديث
+                interimScheduled=true;
+                handler.postDelayed(interimTranslateRunnable,INTERIM_DEBOUNCE_MS);
+            }
+            // لو فيه ترجمة مجدولة أصلاً، خلاص - راح تاخذ آخر pendingInterimText وقت ما تشتغل
+        }
     }
+
+    private void translateAndShow(String text,boolean isFinal,int seq){
+        MLKitTranslator.translate(text,sourceLang,targetLang,t->{
+            if(seq!=transcriptSeq.get())return; // نتيجة قديمة وصلت متأخرة - تجاهل
+            updateCaption(t,isFinal);
+        });
+    }
+
+    /** يعرض نص الترجمة على الـ overlay بمنطق "يتحدث مع الكلام + يثبت عند التوقف". */
+    private void updateCaption(String text,boolean isFinal){
+        handler.post(()->{
+            if(overlay==null||text==null||text.trim().isEmpty())return;
+            overlay.setText(text); // استبدال مباشر، مو تراكم فوق النص القديم
+            handler.removeCallbacks(hideCaptionRunnable);
+            long delay=isFinal?CAPTION_FINAL_HOLD_MS:CAPTION_INTERIM_SAFETY_MS;
+            handler.postDelayed(hideCaptionRunnable,delay);
+        });
+    }
+
+    /** مسار Gladia (نتائج نهائية فقط) - يمر بنفس نظام الكابشن الحي. */
+    private void translate(String text){
+        if(text==null||text.trim().isEmpty())return;
+        int seq=transcriptSeq.incrementAndGet();
+        translateAndShow(text,true,seq);
+    }
+    // ===================== نهاية نظام توقيت الكابشن =====================
+
     private void startAudioCapture(){
         Intent proj=MainActivity.getProjectionData();
         if(AudioCaptureService.isSupported()&&proj!=null){
             audioCapture=new AudioCaptureService();
+            audioCapture.setProjectionStopListener(()->{
+                Log.d(TAG,"Screen share stopped externally, falling back to mic");
+                handler.post(()->{
+                    if(running) startMic();
+                });
+            });
             boolean ok=audioCapture.onActivityResult(null,android.app.Activity.RESULT_OK,proj);
             if(ok){
                 boolean started=audioCapture.startCapture((data,len)->sendToEngine(data,len));
@@ -136,6 +249,15 @@ public class SubtitleService extends Service {
         startMic();
     }
     private void startMic(){
+        if(ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED){
+            showOverlay("صلاحية المايك مطلوبة");
+            return;
+        }
+        if(micRecord!=null){
+            try{micRecord.stop();micRecord.release();}catch(Exception ignored){}
+            micRecord=null;
+        }
         int buf=AudioRecord.getMinBufferSize(16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT);
         micRecord=new AudioRecord(MediaRecorder.AudioSource.MIC,16000,AudioFormat.CHANNEL_IN_MONO,AudioFormat.ENCODING_PCM_16BIT,buf*4);
         if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
@@ -168,13 +290,13 @@ public class SubtitleService extends Service {
             overlay=null;
         }
     }
+    // showOverlay: رسائل الحالة القصيرة فقط (جاهز/خطأ/إلخ) - مهلة ثابتة 3 ثواني مناسبة لها
     private final Runnable hideRunnable=()->{ if(overlay!=null)overlay.setText(""); };
 
     private void showOverlay(String t){
         handler.post(()->{
             if(overlay==null)return;
             overlay.setText(t);
-            // احذف أي hide قديم قبل ما تضيف جديد
             handler.removeCallbacks(hideRunnable);
             handler.postDelayed(hideRunnable,3000);
         });
@@ -185,6 +307,7 @@ public class SubtitleService extends Service {
     }
     @Override public void onDestroy(){
         running=false;
+        handler.removeCallbacksAndMessages(null);
         if(gladia!=null)gladia.stop();
         if(deepgram!=null)deepgram.stop();
         if(audioCapture!=null)audioCapture.stop();
