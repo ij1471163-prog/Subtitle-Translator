@@ -33,7 +33,9 @@ public class UserManager {
 
     // ── Tier الحالي ──────────────────────────────────────────────
     public Tier getCurrentTier() {
-        String tier = prefs.getString("tier", "PLUS"); // DEBUG
+        // FIX: كان الافتراضي "PLUS" (تعليق // DEBUG يؤكد إنه كود تجربة منسي) -
+        // يعني كل مستخدم جديد يحصل PLUS مجاناً تلقائياً بدون اشتراك. لازم الافتراضي FREE.
+        String tier = prefs.getString("tier", "FREE");
         try { return Tier.valueOf(tier); }
         catch (Exception e) { return Tier.FREE; }
     }
