@@ -29,9 +29,16 @@ public class BillingManager implements PurchasesUpdatedListener {
 
     public void init(OnBillingListener listener) {
         this.listener = listener;
+        // FIX: enablePendingPurchases() بدون معاملات انسحب تدريجياً من مكتبة Billing
+        // من إصدار 6 فصاعداً - يطلب PendingPurchasesParams صراحة، وإلا compile error
+        // بإصدار 9.x. هذا على الأغلب نفس نمط الخطأ اللي قابلته وقت ترقية GameTranslator لـ v7.
         billingClient = BillingClient.newBuilder(context)
             .setListener(this)
-            .enablePendingPurchases()
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder()
+                    .enableOneTimeProducts()
+                    .build())
+            .enableAutoServiceReconnection() // NEW: يقلل حالات SERVICE_DISCONNECTED حسب توصية جوجل لـ Billing 8+
             .build();
 
         billingClient.startConnection(new BillingClientStateListener() {
@@ -69,10 +76,15 @@ public class BillingManager implements PurchasesUpdatedListener {
                     product.getSubscriptionOfferDetails();
                 if (offers == null || offers.isEmpty()) return;
 
+                // FIX: كان ياخذ offers.get(0) بشكل أعمى. الحين يفضّل عرض فيه مرحلة تجربة
+                // مجانية (السعر = صفر) لو موجود بالقائمة - وجوده أصلاً معناه المستخدم مؤهل
+                // له (Google Play ما يرجّع عروض تجربة إلا للمؤهلين). غير كذا يرجع للعرض الأساسي.
+                ProductDetails.SubscriptionOfferDetails selectedOffer = selectBestOffer(offers);
+
                 List<BillingFlowParams.ProductDetailsParams> params = new ArrayList<>();
                 params.add(BillingFlowParams.ProductDetailsParams.newBuilder()
                     .setProductDetails(product)
-                    .setOfferToken(offers.get(0).getOfferToken())
+                    .setOfferToken(selectedOffer.getOfferToken())
                     .build());
 
                 billingClient.launchBillingFlow(activity,
@@ -80,6 +92,21 @@ public class BillingManager implements PurchasesUpdatedListener {
                         .setProductDetailsParamsList(params)
                         .build());
             });
+    }
+
+    // ── اختيار أفضل عرض للمستخدم ─────────────────────────────────
+    // Google Play يرجّع بس العروض اللي المستخدم مؤهل لها (مثلاً ما يرجّع عرض تجربة
+    // مجانية لمستخدم استخدمها قبل). فلو وصلنا عرض فيه مرحلة سعرها صفر، معناه
+    // المستخدم مؤهل لتجربة مجانية فعلياً - نفضّله على العرض الأساسي.
+    private ProductDetails.SubscriptionOfferDetails selectBestOffer(
+            List<ProductDetails.SubscriptionOfferDetails> offers) {
+        for (ProductDetails.SubscriptionOfferDetails offer : offers) {
+            List<ProductDetails.PricingPhase> phases = offer.getPricingPhases().getPricingPhaseList();
+            if (!phases.isEmpty() && phases.get(0).getPriceAmountMicros() == 0) {
+                return offer; // أول مرحلة مجانية = عرض تجربة
+            }
+        }
+        return offers.get(0); // ما فيه تجربة متاحة - العرض الأساسي
     }
 
     // ── استقبال نتيجة الشراء ────────────────────────────────────
