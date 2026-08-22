@@ -43,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private SeekBar seekFontSize;
     private Spinner spinnerPosition;
     private BillingManager billingManager;
+    private AdManager adManager; // NEW
 
     // ── AudioPlaybackCapture ─────────────────────────────────────
     private static Intent projectionData = null;
@@ -67,11 +68,22 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, "فشل الشراء", android.widget.Toast.LENGTH_SHORT).show());
             }
         });
+
+        // NEW: تهيئة الإعلانات قبل initUI() عشان الـ Banner يُلصق أثناء بناء الواجهة
+        adManager = new AdManager(this);
+        adManager.init();
+        adManager.recordSessionOpened();
+
         initUI();
-        if (getPrefs().getBoolean(KEY_FIRST_LAUNCH, true)) {
-            showPermissionsDialog();
-            getPrefs().edit().putBoolean(KEY_FIRST_LAUNCH, false).apply();
-        }
+
+        // NEW: App Open يظهر أول ما التطبيق يفتح، وبس بعد ما يختفي نعرض dialog الصلاحيات
+        // (لو عرضناهم بنفس اللحظة، شاشتين full-screen تتصادم على بعض)
+        adManager.maybeShowAppOpenAd(this, () -> {
+            if (getPrefs().getBoolean(KEY_FIRST_LAUNCH, true)) {
+                showPermissionsDialog();
+                getPrefs().edit().putBoolean(KEY_FIRST_LAUNCH, false).apply();
+            }
+        });
     }
 
     @Override
@@ -83,7 +95,13 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        userManager.stopTranslation();
+        // FIX: كان هنا userManager.stopTranslation() - هذا كان يقفل نافذة تتبع الوقت
+        // بعد أجزاء من الثانية من الضغط على "ابدأ" (لأن onPause() يشتغل فوراً حين
+        // يطلع المستخدم لتطبيق الفيديو، وهذا هو التصميم المقصود). النتيجة: translationStartTime
+        // يتصفّر، ولما يضغط "إيقاف" فعلياً بعدها بوقت طويل، stopTranslation() تشوفه صفر
+        // وترجع بدون ما تحسب أي دقيقة - يعني الحد اليومي كان عملياً معطّل بالكامل.
+        // التتبع الصحيح موجود أصلاً بأزرار Start/Stop (startTranslation()/stopTranslation()
+        // بالأسفل) وما يحتاج أي تدخل من دورة حياة الـ Activity.
     }
 
     // ─────────────────────── UI Setup ────────────────────────────
@@ -128,6 +146,10 @@ public class MainActivity extends AppCompatActivity {
         });
         btnStop.setAlpha(0.5f);
         findViewById(R.id.btnSubscribe).setOnClickListener(v -> showUpgradeDialog());
+
+        // NEW: يلصق Banner بالحاوية - لازم تضيف View بمعرف adContainer بـ activity_main.xml
+        adManager.attachBanner(this, findViewById(R.id.adContainer));
+
         updateStatus();
     }
 
@@ -233,8 +255,12 @@ public class MainActivity extends AppCompatActivity {
             attemptStart();
         } else if (req == AudioCaptureService.REQUEST_CODE) {
             // استقبل إذن Playback Capture
-            if (res == RESULT_OK) {
+            if (res == RESULT_OK && data != null) {
                 projectionData = data;
+            } else {
+                Toast.makeText(this,
+                    "تم إلغاء التقاط صوت الفيديو — سيتم استخدام الميكروفون",
+                    Toast.LENGTH_SHORT).show();
             }
             startTranslation();
         }
@@ -257,7 +283,8 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
         else startService(i);
 
-        userManager.startTranslation();
+        // FIX: userManager.startTranslation() انشالت من هنا - SubtitleService.onCreate() صار
+        // مصدر الحقيقة الوحيد للتتبع (يشتغل مهما كان مسار الإيقاف: زر، إشعار، أو النظام)
         tvStatus.setText("🟢 الترجمة شغالة — ارجع للفيديو");
         btnStart.setEnabled(false); btnStart.setAlpha(0.4f);
         btnStop.setEnabled(true);  btnStop.setAlpha(1f);
@@ -265,23 +292,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void stopTranslation() {
-        Intent stopIntent = new Intent(this, SubtitleService.class);
-        stopIntent.setAction(SubtitleService.ACTION_STOP);
-        startService(stopIntent);
-        userManager.stopTranslation();
-        tvStatus.setText("⭕ متوقف");
-        btnStart.setEnabled(true); btnStart.setAlpha(1f);
-        btnStop.setEnabled(false);
-
-
-        // حفظ المكان
-        spinnerPosition.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
-            @Override public void onItemSelected(android.widget.AdapterView<?> p,android.view.View v,int pos,long id){
-                getPrefs().edit().putInt("subtitle_position",pos).apply();
-            }
-            @Override public void onNothingSelected(android.widget.AdapterView<?> p){}
-        }); btnStop.setAlpha(0.4f);
-        updateStatus();
+        // NEW: Interstitial هنا - نقطة توقف طبيعية. يظهر (أو يتجاهل حسب الأهلية) وبعدها نوقف الخدمة فعلياً
+        adManager.maybeShowInterstitial(this, () -> {
+            Intent stopIntent = new Intent(this, SubtitleService.class);
+            stopIntent.setAction(SubtitleService.ACTION_STOP);
+            startService(stopIntent);
+            // FIX: userManager.stopTranslation() انشالت من هنا - SubtitleService.onDestroy() يتكفل فيها
+            // الآن، ويشتغل تلقائياً مهما كان مصدر الإيقاف (هذا الزر أو زر الإشعار)
+            tvStatus.setText("⭕ متوقف");
+            btnStart.setEnabled(true); btnStart.setAlpha(1f);
+            btnStop.setEnabled(false); btnStop.setAlpha(0.4f);
+            updateStatus();
+        });
+        // FIX: كان فيه هنا نسخة مكررة/خاطئة من spinnerPosition.setOnItemSelectedListener(...)
+        // ملصوقة بالغلط داخل stopTranslation() - معاها اللسنر يُسجَّل من جديد كل مرة تضغط إيقاف
+        // (بدون فايدة، والتسجيل الصحيح موجود أصلاً بـ initUI()). حذفتها.
     }
 
     // ─────────────────────── Dialogs ─────────────────────────────
@@ -314,7 +339,7 @@ public class MainActivity extends AppCompatActivity {
             dlg.dismiss();
         });
         btnPrem.setOnClickListener(x -> {
-            billingManager.launchPurchase(this, UserManager.SKU_PLUS_MONTHLY);
+            billingManager.launchPurchase(this, UserManager.SKU_PRO_MONTHLY); // FIX: كان SKU_PLUS_MONTHLY بالغلط
             dlg.dismiss();
         });
         btnLater.setOnClickListener(x -> dlg.dismiss());
