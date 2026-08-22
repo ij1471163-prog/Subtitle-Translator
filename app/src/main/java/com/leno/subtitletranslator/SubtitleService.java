@@ -47,6 +47,7 @@ public class SubtitleService extends Service {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private volatile boolean running=false;
     private String sourceLang="en-US",targetLang="ar";
+    private UserManager usageTracker; // FIX: يتتبع وقت الاستخدام - مربوط بحياة الخدمة نفسها لا بالشاشة
     private final BroadcastReceiver screenOff=new BroadcastReceiver(){
         @Override public void onReceive(Context c,Intent i){
             // لا نوقف الخدمة عند قفل الشاشة
@@ -72,6 +73,8 @@ public class SubtitleService extends Service {
         startForegroundCompat();
         addOverlay();
         running=true;
+        usageTracker=new UserManager(this); // FIX
+        usageTracker.startTranslation(); // FIX: التتبع يبدأ هنا - مع الخدمة الفعلية نفسها، مو مع الشاشة
         quota=new EngineQuotaManager(this);
         startBestEngine();
         startAudioCapture();
@@ -119,8 +122,9 @@ public class SubtitleService extends Service {
                     return;
                 }
                 deepgram=new DeepgramEngine();
-                String dgKey=tier==UserManager.Tier.PRO?KeyManager.getDeepgramKey(this):KeyManager.getDeepgramPlusKey(this);
-                deepgram.start(dgKey,sourceLang,(text,isFinal)->handleTranscript(text,isFinal));
+                // FIX: صار يبعث tier + secret للبروكسي بدل مفتاح Deepgram محلي - السيرفر يحل المفتاح من عنده
+                String tierParam=tier==UserManager.Tier.PRO?"pro":"plus";
+                deepgram.start(tierParam,KeyManager.getProxySecret(this),sourceLang,(text,isFinal)->handleTranscript(text,isFinal));
                 showOverlay("Deepgram جاهز");
                 break;
             default:
@@ -307,6 +311,7 @@ public class SubtitleService extends Service {
     }
     @Override public void onDestroy(){
         running=false;
+        if(usageTracker!=null) usageTracker.stopTranslation(); // FIX: يغطي كل مسارات الإيقاف (زر التطبيق، الإشعار، أو النظام)
         handler.removeCallbacksAndMessages(null);
         if(gladia!=null)gladia.stop();
         if(deepgram!=null)deepgram.stop();
