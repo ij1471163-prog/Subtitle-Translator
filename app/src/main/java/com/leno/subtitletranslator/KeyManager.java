@@ -11,11 +11,6 @@ public class KeyManager {
     private static final String G3="EzkpHRAP";
     private static final String G4="E28aPS0k";
     private static final String G5="CRk6JzxtGAcSbRoJNx83aWoLGyZvGw4UDzoHCzUGDgg=";
-    private static final String D1="PW4/Om5vaWc";
-    private static final String D2="/PzpuaW06Zm";
-    private static final String D3="xtamhsOmk/P";
-    private static final String D4="2g/OmhrZz06";
-    private static final String D5="OGpnO2lmaQ==";
     private static final String S1="HRg6Eiw";
     private static final String S2="NHSs7OCg";
     private static final String S3="5FAw4CxEz";
@@ -55,16 +50,19 @@ public class KeyManager {
     private static final String GL3="NqaWw8cz8";
     private static final String GL4="7Oz1zajo6";
     private static final String GL5="PGZubDo6bjg7";
-    private static final String DP1="amxsbj1naDs";
-    private static final String DP2="6OGlmO21sZm";
-    private static final String DP3="ltaW5ramdsP";
-    private static final String DP4="DhtbG5nbz9m";
-    private static final String DP5="aj9rbm1rbQ==";
 
-    public static String getDeepgramPlusKey(Context ctx){if(!isSafe(ctx))return "";return decode(DP1,DP2,DP3,DP4,DP5);}
-    public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
+    // NEW: سر مشترك مع سيرفر Deepgram proxy (subtitle-translator-khaki.vercel.app) -
+    // حل محل مفاتيح Deepgram المحلية اللي انشالت (D1-D5 / DP1-DP5). السيرفر هو اللي
+    // يحمل مفاتيح Deepgram الحقيقية الآن، والتطبيق بس يثبت هويته للسيرفر بهذا السر.
+    private static final String AS1="NzsBNzBoGAgw";
+    private static final String AS2="PzU5ZjktDwc5";
+    private static final String AS3="HxRoARsnGC43";
+    private static final String AS4="PB8QcycVPGo0";
+    private static final String AS5="AW8KaSgEBw==";
 
     public static String getGladiaKey(Context ctx){if(!isSafe(ctx))return "";return decode(GL1,GL2,GL3,GL4,GL5);}
 
     public static String getGeminiKey(Context ctx){if(!isSafe(ctx))return "";return decode(GEM1,GEM2,GEM3,GEM4,GEM5);}
+
+    public static String getProxySecret(Context ctx){if(!isSafe(ctx))return "";return decode(AS1,AS2,AS3,AS4,AS5);}
 }
