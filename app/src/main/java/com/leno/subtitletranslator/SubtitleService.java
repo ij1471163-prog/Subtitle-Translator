@@ -130,11 +130,49 @@ public class SubtitleService extends Service {
                 showOverlay("Deepgram جاهز");
                 break;
             default:
-                // SpeechRecognizer مجاني
-                showOverlay("وضع مجاني");
+                // FREE: SpeechRecognizer مجاني من Android
+                showOverlay("وضع مجاني - جودة محدودة");
+                startSpeechRecognizer();
                 break;
         }
     }
+    private android.speech.SpeechRecognizer speechRecognizer;
+    private void startSpeechRecognizer(){
+        android.os.Handler h=new android.os.Handler(android.os.Looper.getMainLooper());
+        h.post(()->{
+            try{
+                if(!android.speech.SpeechRecognizer.isRecognitionAvailable(this)){
+                    showOverlay("خدمة الكلام غير متاحة");
+                    return;
+                }
+                speechRecognizer=android.speech.SpeechRecognizer.createSpeechRecognizer(this);
+                android.content.Intent intent=new android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+                intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+                intent.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,sourceLang);
+                intent.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);
+                speechRecognizer.setRecognitionListener(new android.speech.RecognitionListener(){
+                    @Override public void onReadyForSpeech(android.os.Bundle p){}
+                    @Override public void onBeginningOfSpeech(){}
+                    @Override public void onRmsChanged(float r){}
+                    @Override public void onBufferReceived(byte[]b){}
+                    @Override public void onEndOfSpeech(){}
+                    @Override public void onError(int e){if(running)h.postDelayed(()->startSpeechRecognizer(),1000);}
+                    @Override public void onResults(android.os.Bundle b){
+                        java.util.ArrayList<String>r=b.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                        if(r!=null&&!r.isEmpty())translate(r.get(0));
+                        if(running)h.postDelayed(()->startSpeechRecognizer(),500);
+                    }
+                    @Override public void onPartialResults(android.os.Bundle b){
+                        java.util.ArrayList<String>r=b.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);
+                        if(r!=null&&!r.isEmpty())showOverlay(r.get(0));
+                    }
+                    @Override public void onEvent(int t,android.os.Bundle b){}
+                });
+                speechRecognizer.startListening(intent);
+            }catch(Exception e){android.util.Log.e("SR","error: "+e.getMessage());}
+        });
+    }
+
     // Smart Sleep - بدون أي تغيير
     private volatile long lastAudioTime = 0;
     private volatile boolean sleeping = false;
