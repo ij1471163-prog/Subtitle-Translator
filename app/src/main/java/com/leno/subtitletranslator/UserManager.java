@@ -101,6 +101,8 @@ public class UserManager {
 
     // ── reset يومي ───────────────────────────────────────────────
     private void resetDailyIfNewDay() {
+        // FREE لا يتجدد أبداً
+        if(getCurrentTier()==Tier.FREE) return;
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
         String last  = prefs.getString("last_date", "");
         if (!today.equals(last)) {
