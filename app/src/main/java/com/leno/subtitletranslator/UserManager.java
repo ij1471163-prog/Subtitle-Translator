@@ -2,6 +2,7 @@ package com.leno.subtitletranslator;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.provider.Settings;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
@@ -35,6 +36,13 @@ public class UserManager {
     public Tier getCurrentTier() {
         // FIX: كان الافتراضي "PLUS" (تعليق // DEBUG يؤكد إنه كود تجربة منسي) -
         // يعني كل مستخدم جديد يحصل PLUS مجاناً تلقائياً بدون اشتراك. لازم الافتراضي FREE.
+        // تحقق من Device ID لمنع إعادة التثبيت
+        String savedId = prefs.getString("device_id", "");
+        String currentId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        if (!savedId.equals(currentId)) {
+            // جهاز جديد أو تثبيت جديد - احتفظ بالتاريخ
+            prefs.edit().putString("device_id", currentId).apply();
+        }
         String tier = prefs.getString("tier", "FREE");
         try { return Tier.valueOf(tier); }
         catch (Exception e) { return Tier.FREE; }
