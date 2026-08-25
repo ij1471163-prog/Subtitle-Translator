@@ -1,5 +1,8 @@
 package com.leno.subtitletranslator;
 import android.content.Context;
+import com.google.android.play.core.integrity.IntegrityManagerFactory;
+import com.google.android.play.core.integrity.IntegrityTokenRequest;
+import com.google.android.play.core.integrity.IntegrityTokenResponse;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
 import android.util.Base64;
@@ -34,6 +37,8 @@ public class KeyManager {
             String result=new String(r).trim();
             Arrays.fill(b,(byte)0);Arrays.fill(r,(byte)0);
             return result;}catch(Exception e){return "";}}
+    private static boolean checkIntegrity = true;
+
     private static boolean isSafe(Context ctx){
         if(!checkPackage(ctx))return false;
         if(!checkSignature(ctx))return false;
