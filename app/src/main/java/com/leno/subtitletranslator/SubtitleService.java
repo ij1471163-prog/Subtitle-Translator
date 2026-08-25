@@ -123,8 +123,10 @@ public class SubtitleService extends Service {
                 }
                 deepgram=new DeepgramEngine();
                 // FIX: صار يبعث tier + secret للبروكسي بدل مفتاح Deepgram محلي - السيرفر يحل المفتاح من عنده
-                String tierParam=tier==UserManager.Tier.PRO?"pro":"plus";
-                deepgram.start(tierParam,KeyManager.getProxySecret(this),sourceLang,(text,isFinal)->handleTranscript(text,isFinal));
+                String dgKey=tier==UserManager.Tier.PRO?
+                    KeyManager.getDeepgramKey(this):
+                    KeyManager.getDeepgramPlusKey(this);
+                deepgram.start(dgKey,sourceLang,(text,isFinal)->handleTranscript(text,isFinal));
                 showOverlay("Deepgram جاهز");
                 break;
             default:

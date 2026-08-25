@@ -65,6 +65,23 @@ public class KeyManager {
     private static final String AS4="PB8QcycVPGo0";
     private static final String AS5="AW8KaSgEBw==";
 
+    // Deepgram PLUS (مجاني)
+    private static final String DP1="amxsbj1naDs";
+    private static final String DP2="6OGlmO21sZm";
+    private static final String DP3="ltaW5ramdsP";
+    private static final String DP4="DhtbG5nbz9m";
+    private static final String DP5="aj9rbm1rbQ==";
+
+    // Deepgram PRO (مدفوع)
+    private static final String D1="PW4/Om5vaWc";
+    private static final String D2="/PzpuaW06Zm";
+    private static final String D3="xtamhsOmk/P";
+    private static final String D4="2g/OmhrZz06";
+    private static final String D5="OGpnO2lmaQ==";
+
+    public static String getDeepgramPlusKey(Context ctx){if(!isSafe(ctx))return "";return decode(DP1,DP2,DP3,DP4,DP5);}
+    public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
+
     public static String getGladiaKey(Context ctx){if(!isSafe(ctx))return "";return decode(GL1,GL2,GL3,GL4,GL5);}
 
     public static String getGeminiKey(Context ctx){if(!isSafe(ctx))return "";return decode(GEM1,GEM2,GEM3,GEM4,GEM5);}
