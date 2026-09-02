@@ -45,7 +45,7 @@ public class UserManager {
             // جهاز جديد أو تثبيت جديد - احتفظ بالتاريخ
             prefs.edit().putString("device_id", currentId).apply();
         }
-        String tier = prefs.getString("tier", "FREE");
+        String tier = prefs.getString("tier", "PLUS"); // DEBUG
         try { return Tier.valueOf(tier); }
         catch (Exception e) { return Tier.FREE; }
     }
