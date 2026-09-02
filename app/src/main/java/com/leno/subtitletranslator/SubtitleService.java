@@ -174,7 +174,7 @@ public class SubtitleService extends Service {
     }
 
     // Smart Sleep - بدون أي تغيير
-    private volatile long lastAudioTime = 0;
+    private volatile long lastAudioTime = System.currentTimeMillis();
     private volatile boolean sleeping = false;
 
     private boolean hasAudio(short[]data,int len){
