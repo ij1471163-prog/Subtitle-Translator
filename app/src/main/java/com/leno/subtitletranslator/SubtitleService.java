@@ -116,13 +116,8 @@ public class SubtitleService extends Service {
                 showOverlay("Gladia جاهز");
                 break;
             case DEEPGRAM:
-                // Deepgram للـ PLUS و PRO فقط
-                if(tier == UserManager.Tier.FREE){
-                    showOverlay("يتطلب اشتراك PLUS");
-                    return;
-                }
                 deepgram=new DeepgramEngine();
-                // FIX: صار يبعث tier + secret للبروكسي بدل مفتاح Deepgram محلي - السيرفر يحل المفتاح من عنده
+                // FREE/PLUS = مفتاح مجاني، PRO = مفتاح مدفوع
                 String dgKey=tier==UserManager.Tier.PRO?
                     KeyManager.getDeepgramKey(this):
                     KeyManager.getDeepgramPlusKey(this);
@@ -130,9 +125,7 @@ public class SubtitleService extends Service {
                 showOverlay("Deepgram جاهز");
                 break;
             default:
-                // FREE: SpeechRecognizer مجاني من Android
-                showOverlay("وضع مجاني - جودة محدودة");
-                startSpeechRecognizer();
+                showOverlay("وضع مجاني");
                 break;
         }
     }
