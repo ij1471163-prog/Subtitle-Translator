@@ -38,7 +38,7 @@ public class UserManager {
         // يعني كل مستخدم جديد يحصل PLUS مجاناً تلقائياً بدون اشتراك. لازم الافتراضي FREE.
         // تحقق من Device ID لمنع إعادة التثبيت
         String savedId = prefs.getString("device_id", "");
-        String currentId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+        String currentId = Settings.Secure.getString(this.context.getContentResolver(), Settings.Secure.ANDROID_ID);
         if (!savedId.equals(currentId)) {
             // جهاز جديد أو تثبيت جديد - احتفظ بالتاريخ
             prefs.edit().putString("device_id", currentId).apply();
