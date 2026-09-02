@@ -28,7 +28,9 @@ public class UserManager {
     private final SharedPreferences prefs;
     private long translationStartTime = 0;
 
+    private final Context context;
     public UserManager(Context context) {
+        this.context = context;
         prefs = context.getSharedPreferences("user_data", Context.MODE_PRIVATE);
     }
 
