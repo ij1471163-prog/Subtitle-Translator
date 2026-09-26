@@ -52,12 +52,11 @@ jobs:
         run: chmod +x gradlew
 
       # =========================
-      # DEBUG APK
+      # DEBUG
+      # APK فقط
       # =========================
       - name: Build Debug APK
         if: ${{ inputs.build_target == 'debug' }}
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           ./gradlew assembleDebug \
             --no-daemon \
@@ -76,12 +75,11 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
 
       # =========================
-      # RELEASE AAB
+      # RELEASE
+      # AAB
       # =========================
       - name: Build Signed AAB
         if: ${{ inputs.build_target == 'release' }}
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           ./gradlew bundleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
@@ -93,12 +91,11 @@ jobs:
             --parallel
 
       # =========================
-      # RELEASE APK
+      # RELEASE
+      # APK
       # =========================
       - name: Build Signed APK
         if: ${{ inputs.build_target == 'release' }}
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           ./gradlew assembleRelease \
             -Pandroid.injected.signing.store.file=$(pwd)/keystore.jks \
