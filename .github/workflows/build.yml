@@ -10,7 +10,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -41,12 +41,8 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: echo "$KEYSTORE_BASE64" | base64 --decode > keystore.jks
 
-      # =========================
-      # AAB (Play Store)
-      # =========================
       - name: Build Signed AAB
         env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           ./gradlew bundleRelease \
@@ -58,12 +54,8 @@ jobs:
             --build-cache \
             --parallel
 
-      # =========================
-      # APK (Release)
-      # =========================
       - name: Build Signed APK
         env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           ./gradlew assembleRelease \
