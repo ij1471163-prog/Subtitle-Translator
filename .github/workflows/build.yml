@@ -58,12 +58,34 @@ jobs:
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
       # =========================
-      # UPLOAD
+      # APK منفصل
       # =========================
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        if: ${{ inputs.build_target == 'release' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: APK-and-AAB-${{ inputs.build_target }}
-          path: |
-            app/build/outputs/apk/**/*.apk
-            app/build/outputs/bundle/**/*.aab
+          name: APK-release
+          path: app/build/outputs/apk/**/*.apk
+          retention-days: 7
+
+      # =========================
+      # AAB منفصل
+      # =========================
+      - name: Upload AAB
+        if: ${{ inputs.build_target == 'release' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: AAB-release
+          path: app/build/outputs/bundle/**/*.aab
+          retention-days: 7
+
+      # =========================
+      # DEBUG APK منفصل
+      # =========================
+      - name: Upload Debug APK
+        if: ${{ inputs.build_target == 'debug' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: APK-debug
+          path: app/build/outputs/apk/**/*.apk
           retention-days: 7
