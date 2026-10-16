@@ -50,8 +50,8 @@ public class AdManager {
     private static final String KEY_APPOPEN_COUNT = "appopen_count";
     // ⚠️ معرفات إعلانية حقيقية (SubtitleTranslator - AdMob) - App ID الرئيسي يروح بالـ AndroidManifest.xml
     // App ID (يُستخدم بالـ Manifest بس، مو هنا): ca-app-pub-8342669226787286~9358139906
-    private static final String APPOPEN_UNIT_ID = "ca-app-pub-3940256099942544/9257395921"; // حقيقي
-    private static final String REWARDED_UNIT_ID = "ca-app-pub-3940256099942544/5224354917"; // حقيقي
+    private static final String APPOPEN_UNIT_ID = "ca-app-pub-8342669226787286/9170437642"; // حقيقي
+    private static final String REWARDED_UNIT_ID = "ca-app-pub-8342669226787286/9849094490"; // حقيقي
 
     // ⚠️ لسا test IDs - بدّلها بمعرفات Banner/Interstitial الحقيقية حقتك أول ما تسويها
     private static final String BANNER_UNIT_ID_TEST = "ca-app-pub-3940256099942544/9214589741";
