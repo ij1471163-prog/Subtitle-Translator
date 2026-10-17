@@ -173,6 +173,16 @@
         android:layout_marginTop="8dp"
         android:visibility="gone" />
 
+    <!-- زر ترجمة بدون إنترنت - PRO فقط -->
+    <Button
+        android:id="@+id/btnOfflineMode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📴 ترجمة بدون إنترنت (PRO)"
+        android:textSize="15sp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
     <!-- الاشتراك -->
     <Button
         android:id="@+id/btnSubscribe"

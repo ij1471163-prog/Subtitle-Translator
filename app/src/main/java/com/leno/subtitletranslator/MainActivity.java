@@ -37,7 +37,9 @@ public class MainActivity extends AppCompatActivity {
 
     private Spinner     spinnerSource, spinnerTarget;
     private TextView    tvStatus, tvRemainingTime;
-    private Button      btnStart, btnStop, btnWatchAd;
+    private Button      btnStart, btnStop, btnWatchAd, btnOfflineMode;
+    private VoskOfflineEngine voskEngine;
+    private boolean offlineModeActive = false;
     private ProgressBar progressBar;
     private UserManager userManager;
     private SeekBar seekFontSize;
@@ -134,12 +136,14 @@ public class MainActivity extends AppCompatActivity {
         btnStart        = findViewById(R.id.btnStart);
         btnStop         = findViewById(R.id.btnStop);
         btnWatchAd      = findViewById(R.id.btnWatchAd);
+        btnOfflineMode  = findViewById(R.id.btnOfflineMode);
         progressBar     = findViewById(R.id.progressBar);
 
         setupSpinners();
         btnStart.setOnClickListener(v -> attemptStart());
         btnStop.setOnClickListener(v -> stopTranslation());
         btnWatchAd.setOnClickListener(v -> watchAdForBonus());
+        btnOfflineMode.setOnClickListener(v -> toggleOfflineMode());
         btnStop.setEnabled(false);
         seekFontSize = findViewById(R.id.seekFontSize);
         spinnerPosition = findViewById(R.id.spinnerPosition);
@@ -392,6 +396,80 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         btnWatchAd.setVisibility(android.view.View.GONE); // لا يوجد زر مكافأة
+
+        // زر الـ offline - يظهر فقط للـ PRO
+        UserManager.Tier tier = userManager.getCurrentTier();
+        if (tier == UserManager.Tier.PRO) {
+            btnOfflineMode.setVisibility(android.view.View.VISIBLE);
+            btnOfflineMode.setText(offlineModeActive ? "🌐 العودة للترجمة بالإنترنت" : "📴 ترجمة بدون إنترنت (PRO)");
+        } else {
+            btnOfflineMode.setVisibility(android.view.View.GONE);
+        }
+    }
+
+    // ─────────────────────── Offline Mode ────────────────────────
+
+    private void toggleOfflineMode() {
+        if (offlineModeActive) {
+            // إيقاف offline mode
+            offlineModeActive = false;
+            if (voskEngine != null) { voskEngine.stop(); voskEngine = null; }
+            Toast.makeText(this, "🌐 رجعنا للترجمة بالإنترنت", Toast.LENGTH_SHORT).show();
+            updateStatus();
+            return;
+        }
+
+        // تفعيل offline mode
+        if (voskEngine == null) voskEngine = new VoskOfflineEngine(this);
+
+        if (!voskEngine.isModelReady()) {
+            // نموذج غير محمّل - نسأل المستخدم
+            new AlertDialog.Builder(this)
+                .setTitle("📴 ترجمة بدون إنترنت")
+                .setMessage("يحتاج تحميل نموذج الصوت (~40MB) مرة واحدة فقط.\n\nتبي تحمّله الآن؟")
+                .setPositiveButton("تحميل", (d, w) -> downloadVoskModel())
+                .setNegativeButton("إلغاء", null)
+                .show();
+        } else {
+            enableOfflineMode();
+        }
+    }
+
+    private void downloadVoskModel() {
+        progressBar.setVisibility(android.view.View.VISIBLE);
+        btnOfflineMode.setEnabled(false);
+        btnOfflineMode.setText("⏳ جاري التحميل...");
+
+        voskEngine.downloadModel(new VoskOfflineEngine.DownloadCallback() {
+            @Override public void onProgress(int percent) {
+                runOnUiThread(() -> btnOfflineMode.setText("⏳ تحميل " + percent + "%..."));
+            }
+            @Override public void onComplete() {
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(android.view.View.GONE);
+                    btnOfflineMode.setEnabled(true);
+                    Toast.makeText(MainActivity.this, "✅ تم التحميل!", Toast.LENGTH_SHORT).show();
+                    enableOfflineMode();
+                });
+            }
+            @Override public void onError(String error) {
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(android.view.View.GONE);
+                    btnOfflineMode.setEnabled(true);
+                    updateStatus();
+                    Toast.makeText(MainActivity.this, "❌ فشل التحميل: " + error, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void enableOfflineMode() {
+        offlineModeActive = true;
+        updateStatus();
+        Toast.makeText(this, "📴 تم تفعيل الترجمة بدون إنترنت", Toast.LENGTH_SHORT).show();
+        // الـ SubtitleService سيقرأ هذا الـ flag لما يبدأ
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean("offline_mode", true).apply();
     }
 
     // ─────────────────────── Helpers ─────────────────────────────
