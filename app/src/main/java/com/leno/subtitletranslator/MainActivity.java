@@ -397,16 +397,34 @@ public class MainActivity extends AppCompatActivity {
         }
         btnWatchAd.setVisibility(android.view.View.GONE); // لا يوجد زر مكافأة
 
-        // زر الـ offline - يظهر للجميع مؤقتاً للاختبار
-        btnOfflineMode.setVisibility(android.view.View.VISIBLE);
-        btnOfflineMode.setText(offlineModeActive ? "🌐 العودة للترجمة بالإنترنت" : "📴 ترجمة بدون إنترنت (PRO)");
+        // زر الـ offline - يظهر للمجانيين فقط (لتشجيعهم على الاشتراك)
+        UserManager.Tier tier = userManager.getCurrentTier();
+        if (tier == UserManager.Tier.FREE) {
+            btnOfflineMode.setVisibility(android.view.View.VISIBLE);
+            btnOfflineMode.setText("📴 ترجمة بدون إنترنت ← اشترك PRO");
+        } else {
+            btnOfflineMode.setVisibility(android.view.View.GONE);
+        }
     }
 
     // ─────────────────────── Offline Mode ────────────────────────
 
     private void toggleOfflineMode() {
+        UserManager.Tier tier = userManager.getCurrentTier();
+
+        // المجاني → dialog ترقية للـ PRO
+        if (tier == UserManager.Tier.FREE) {
+            new AlertDialog.Builder(this)
+                .setTitle("📴 ترجمة بدون إنترنت")
+                .setMessage("هذه الميزة متاحة لمشتركي PRO فقط.\n\nاشترك الآن وترجم بدون إنترنت في أي مكان!")
+                .setPositiveButton("اشترك PRO", (d, w) -> showUpgradeDialog())
+                .setNegativeButton("لاحقاً", null)
+                .show();
+            return;
+        }
+
+        // PRO → تفعيل/إيقاف offline mode
         if (offlineModeActive) {
-            // إيقاف offline mode
             offlineModeActive = false;
             if (voskEngine != null) { voskEngine.stop(); voskEngine = null; }
             Toast.makeText(this, "🌐 رجعنا للترجمة بالإنترنت", Toast.LENGTH_SHORT).show();
@@ -414,11 +432,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // تفعيل offline mode
         if (voskEngine == null) voskEngine = new VoskOfflineEngine(this);
-
         if (!voskEngine.isModelReady()) {
-            // نموذج غير محمّل - نسأل المستخدم
             new AlertDialog.Builder(this)
                 .setTitle("📴 ترجمة بدون إنترنت")
                 .setMessage("يحتاج تحميل نموذج الصوت (~40MB) مرة واحدة فقط.\n\nتبي تحمّله الآن؟")
