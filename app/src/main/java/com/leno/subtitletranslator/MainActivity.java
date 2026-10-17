@@ -67,6 +67,17 @@ public class MainActivity extends AppCompatActivity {
             @Override public void onPurchaseFailed(String msg) {
                 runOnUiThread(() -> android.widget.Toast.makeText(MainActivity.this, "فشل الشراء", android.widget.Toast.LENGTH_SHORT).show());
             }
+            @Override public void onSubscriptionExpired() {
+                runOnUiThread(() -> {
+                    updateStatus();
+                    new android.app.AlertDialog.Builder(MainActivity.this)
+                        .setTitle("⚠️ انتهى الاشتراك")
+                        .setMessage("انتهى اشتراكك أو أُلغي.\nيمكنك الاشتراك مجدداً للاستمرار.")
+                        .setPositiveButton("اشترك الآن", (d, w) -> showUpgradeDialog())
+                        .setNegativeButton("لاحقاً", null)
+                        .show();
+                });
+            }
         });
 
         // NEW: تهيئة الإعلانات قبل initUI() عشان الـ Banner يُلصق أثناء بناء الواجهة
@@ -89,7 +100,15 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // تحقق من الاشتراك مع Google Play في كل مرة يفتح التطبيق
+        billingManager.restorePurchases();
         updateStatus();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        billingManager.destroy();
     }
 
     @Override
