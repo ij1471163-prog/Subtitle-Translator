@@ -56,6 +56,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         userManager = new UserManager(this);
+        KeyManager.init(this); // جلب المفاتيح من Firebase Remote Config
         billingManager = new BillingManager(this, userManager);
         billingManager.init(new BillingManager.OnBillingListener() {
             @Override public void onPurchaseSuccess(UserManager.Tier tier) {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1095578730743",
+    "project_id": "subtitletranslator-b6c46",
+    "storage_bucket": "subtitletranslator-b6c46.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095578730743:android:e3f22b4abb80924778d3f2",
+        "android_client_info": {
+          "package_name": "com.leno.subtitletranslator"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8DPqZvLgGclxnooluTHhmrir0NfUZjHs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

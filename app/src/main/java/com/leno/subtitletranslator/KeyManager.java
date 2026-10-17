@@ -1,90 +1,137 @@
 package com.leno.subtitletranslator;
+
 import android.content.Context;
-import com.google.android.play.core.integrity.IntegrityManagerFactory;
-import com.google.android.play.core.integrity.IntegrityTokenRequest;
-import com.google.android.play.core.integrity.IntegrityTokenResponse;
-import android.content.pm.PackageManager;
-import android.content.pm.Signature;
-import android.util.Base64;
-import java.util.Arrays;
+import android.content.SharedPreferences;
+import android.util.Log;
+
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig;
+import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings;
+
+/**
+ * KeyManager - يجيب مفاتيح API من Firebase Remote Config.
+ *
+ * الفائدة:
+ * - المفاتيح محفوظة في Firebase (ما في الكود)
+ * - لو انكشف مفتاح = تغيّره في Firebase فوراً بدون تحديث تطبيق
+ * - لو تبي توقف المجانيين = تحط قيمة فاضية في Firebase
+ *
+ * كيف تضيف مفاتيح في Firebase Console:
+ * Remote Config → Add parameter → اكتب الاسم والقيمة → Publish
+ *
+ * أسماء المفاتيح المطلوبة في Firebase:
+ *   deepgram_key_plus  → مفتاح Deepgram للمجانيين
+ *   deepgram_key_pro   → مفتاح Deepgram للـ PRO
+ *   gladia_key         → مفتاح Gladia
+ *   proxy_secret       → سر الـ proxy server
+ */
 public class KeyManager {
-    private static final String PKG="com.leno.subtitletranslator";
-    private static final String G1="OS01ATpp";
-    private static final String G2="ahwNOQ09";
-    private static final String G3="EzkpHRAP";
-    private static final String G4="E28aPS0k";
-    private static final String G5="CRk6JzxtGAcSbRoJNx83aWoLGyZvGw4UDzoHCzUGDgg=";
-    private static final String S1="HRg6Eiw";
-    private static final String S2="NHSs7OCg";
-    private static final String S3="5FAw4CxEz";
-    private static final String S4="ChVpBwcu";
-    private static final String S5="N20zBzsaLhs=";
-    private static final String A1="aD1qbj1p";
-    private static final String A2="OGo6O21r";
-    private static final String A3="amptbmY7";
-    private static final String A4="bm88PDhq";
-    private static final String A5="aW9pazs6aDo=";
-    private static int getXK(){ return 94; }
-    private static boolean checkPackage(Context ctx){return ctx.getPackageName().equals(PKG);}
-    private static boolean checkSignature(Context ctx){
-        try{Signature[]sigs=ctx.getPackageManager().getPackageInfo(ctx.getPackageName(),PackageManager.GET_SIGNATURES).signatures;return sigs!=null&&sigs.length>0;}
-        catch(Exception e){return false;}}
-    private static String decode(String p1,String p2,String p3,String p4,String p5){
-        try{
-            byte[]b=Base64.decode(p1+p2+p3+p4+p5,Base64.DEFAULT);
-            int xk=getXK();byte[]r=new byte[b.length];
-            for(int i=0;i<b.length;i++)r[i]=(byte)(b[i]^xk);
-            String result=new String(r).trim();
-            Arrays.fill(b,(byte)0);Arrays.fill(r,(byte)0);
-            return result;}catch(Exception e){return "";}}
-    private static boolean checkIntegrity = true;
 
-    private static boolean isSafe(Context ctx){
-        if(!checkPackage(ctx))return false;
-        if(!checkSignature(ctx))return false;
-        if(!SecurityManager.isSafe(ctx))return false;
-        return true;}
-    private static final String GEM1="Hw9wHzxmDBBoFy";
-    private static final String GEM2="gwNihuaQQtDTQN";
-    private static final String GEM3="NycmHWwZbDcZcw";
-    private static final String GEM4="g8BzEwZjIXNnMv";
-    private static final String GEM5="E2cdKRMRCQoQJjk=";
+    private static final String TAG = "KeyManager";
+    private static final String PKG = "com.leno.subtitletranslator";
 
-    private static final String GL1="bjo/bj9mZ";
-    private static final String GL2="mhzOGs8Z3";
-    private static final String GL3="NqaWw8cz8";
-    private static final String GL4="7Oz1zajo6";
-    private static final String GL5="PGZubDo6bjg7";
+    // أسماء المفاتيح في Firebase Remote Config
+    private static final String RC_DEEPGRAM_PLUS = "deepgram_key_plus";
+    private static final String RC_DEEPGRAM_PRO  = "deepgram_key_pro";
+    private static final String RC_GLADIA        = "gladia_key";
+    private static final String RC_PROXY_SECRET  = "proxy_secret";
 
-    // NEW: سر مشترك مع سيرفر Deepgram proxy (subtitle-translator-khaki.vercel.app) -
-    // حل محل مفاتيح Deepgram المحلية اللي انشالت (D1-D5 / DP1-DP5). السيرفر هو اللي
-    // يحمل مفاتيح Deepgram الحقيقية الآن، والتطبيق بس يثبت هويته للسيرفر بهذا السر.
-    private static final String AS1="NzsBNzBoGAgw";
-    private static final String AS2="PzU5ZjktDwc5";
-    private static final String AS3="HxRoARsnGC43";
-    private static final String AS4="PB8QcycVPGo0";
-    private static final String AS5="AW8KaSgEBw==";
+    // Cache محلي - يُحفظ بعد أول جلب ناجح من Firebase
+    private static final String PREFS_KEYS = "rc_keys_cache";
 
-    // Deepgram PLUS (مجاني)
-    private static final String DP1="amxsbj1naDs";
-    private static final String DP2="6OGlmO21sZm";
-    private static final String DP3="ltaW5ramdsP";
-    private static final String DP4="DhtbG5nbz9m";
-    private static final String DP5="aj9rbm1rbQ==";
+    private static FirebaseRemoteConfig remoteConfig;
 
-    // Deepgram PRO (مدفوع)
-    private static final String D1="PW4/Om5vaWc";
-    private static final String D2="/PzpuaW06Zm";
-    private static final String D3="xtamhsOmk/P";
-    private static final String D4="2g/OmhrZz06";
-    private static final String D5="OGpnO2lmaQ==";
+    // ── تهيئة Firebase Remote Config ────────────────────────────
+    // يُستدعى مرة واحدة عند بدء التطبيق من MainActivity
 
-    public static String getDeepgramPlusKey(Context ctx){if(!isSafe(ctx))return "";return decode(DP1,DP2,DP3,DP4,DP5);}
-    public static String getDeepgramKey(Context ctx){if(!isSafe(ctx))return "";return decode(D1,D2,D3,D4,D5);}
+    public static void init(Context context) {
+        remoteConfig = FirebaseRemoteConfig.getInstance();
 
-    public static String getGladiaKey(Context ctx){if(!isSafe(ctx))return "";return decode(GL1,GL2,GL3,GL4,GL5);}
+        FirebaseRemoteConfigSettings settings = new FirebaseRemoteConfigSettings.Builder()
+                // في Production: 3600 ثانية (ساعة) - الحد الأدنى المسموح
+                // في Debug: 0 للتطوير السريع
+                .setMinimumFetchIntervalInSeconds(3600)
+                .build();
 
-    public static String getGeminiKey(Context ctx){if(!isSafe(ctx))return "";return decode(GEM1,GEM2,GEM3,GEM4,GEM5);}
+        remoteConfig.setConfigSettingsAsync(settings);
 
-    public static String getProxySecret(Context ctx){if(!isSafe(ctx))return "";return decode(AS1,AS2,AS3,AS4,AS5);}
+        // قيم افتراضية فارغة - لو Firebase غير متاح
+        java.util.Map<String, Object> defaults = new java.util.HashMap<>();
+        defaults.put(RC_DEEPGRAM_PLUS, "");
+        defaults.put(RC_DEEPGRAM_PRO,  "");
+        defaults.put(RC_GLADIA,        "");
+        defaults.put(RC_PROXY_SECRET,  "");
+        remoteConfig.setDefaultsAsync(defaults);
+
+        // جلب وتفعيل القيم من Firebase
+        remoteConfig.fetchAndActivate()
+                .addOnSuccessListener(updated -> {
+                    Log.d(TAG, "✅ Remote Config fetched, updated=" + updated);
+                    // احفظ نسخة محلية كـ cache للاستخدام offline
+                    cacheKeys(context);
+                })
+                .addOnFailureListener(e -> {
+                    Log.w(TAG, "Remote Config fetch failed, using cache: " + e.getMessage());
+                    // استخدم الـ cache المحلي لو Firebase ما اشتغل
+                });
+    }
+
+    // ── جلب المفاتيح ─────────────────────────────────────────────
+
+    public static String getDeepgramPlusKey(Context ctx) {
+        return getKey(ctx, RC_DEEPGRAM_PLUS);
+    }
+
+    public static String getDeepgramKey(Context ctx) {
+        return getKey(ctx, RC_DEEPGRAM_PRO);
+    }
+
+    public static String getGladiaKey(Context ctx) {
+        return getKey(ctx, RC_GLADIA);
+    }
+
+    public static String getProxySecret(Context ctx) {
+        return getKey(ctx, RC_PROXY_SECRET);
+    }
+
+    // Gemini غير مستخدم حالياً - يرجع فاضي
+    public static String getGeminiKey(Context ctx) {
+        return "";
+    }
+
+    // ── منطق الجلب: Firebase أولاً ثم Cache ─────────────────────
+
+    private static String getKey(Context ctx, String keyName) {
+        // تحقق أن التطبيق أصلي
+        if (!ctx.getPackageName().equals(PKG)) return "";
+
+        // حاول من Firebase Remote Config أولاً
+        if (remoteConfig != null) {
+            String value = remoteConfig.getString(keyName);
+            if (value != null && !value.isEmpty()) {
+                return value.trim();
+            }
+        }
+
+        // fallback: الـ cache المحلي لو Firebase ما رد
+        return getCachedKey(ctx, keyName);
+    }
+
+    // ── Cache المحلي للـ offline ─────────────────────────────────
+
+    private static void cacheKeys(Context ctx) {
+        if (remoteConfig == null) return;
+        SharedPreferences.Editor editor = ctx.getSharedPreferences(PREFS_KEYS, Context.MODE_PRIVATE).edit();
+        editor.putString(RC_DEEPGRAM_PLUS, remoteConfig.getString(RC_DEEPGRAM_PLUS));
+        editor.putString(RC_DEEPGRAM_PRO,  remoteConfig.getString(RC_DEEPGRAM_PRO));
+        editor.putString(RC_GLADIA,        remoteConfig.getString(RC_GLADIA));
+        editor.putString(RC_PROXY_SECRET,  remoteConfig.getString(RC_PROXY_SECRET));
+        editor.apply();
+        Log.d(TAG, "Keys cached locally");
+    }
+
+    private static String getCachedKey(Context ctx, String keyName) {
+        String value = ctx.getSharedPreferences(PREFS_KEYS, Context.MODE_PRIVATE)
+                .getString(keyName, "");
+        return value != null ? value.trim() : "";
+    }
 }
