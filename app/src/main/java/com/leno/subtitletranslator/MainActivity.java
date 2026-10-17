@@ -353,8 +353,8 @@ public class MainActivity extends AppCompatActivity {
     private void watchAdForBonus() {
         if (!userManager.canEarnReward()) {
             new android.app.AlertDialog.Builder(this)
-                .setTitle("وصلت الحد")
-                .setMessage("استفدت من المكافآت اليومية كلها (٣ مرات). ارجع غداً أو اشترك للاستمتام بدون حدود!")
+                .setTitle("شاهدت إعلانك هذا الأسبوع")
+                .setMessage("استفدت من مكافأة هذا الأسبوع. ارجع الأسبوع القادم أو اشترك للاستمتاع بدون حدود!")
                 .setPositiveButton("اشترك الحين", (d, w) -> showUpgradeDialog())
                 .setNegativeButton("لاحقاً", null)
                 .show();
@@ -367,11 +367,7 @@ public class MainActivity extends AppCompatActivity {
         adManager.showRewarded(this,
             () -> { // onEarned - شاهد الإعلان كامل
                 userManager.applyRewardBonus();
-                int remaining = userManager.remainingRewardsToday();
-                String msg = remaining > 0
-                    ? "✅ أضفنا لك 30 دقيقة! متبقي " + remaining + " مكافأة اليوم"
-                    : "✅ أضفنا لك 30 دقيقة! استنفدت مكافآت اليوم";
-                android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this, "✅ أضفنا لك 30 دقيقة إضافية!", android.widget.Toast.LENGTH_LONG).show();
                 updateStatus();
             },
             () -> { // onSkippedOrFailed
@@ -389,15 +385,14 @@ public class MainActivity extends AppCompatActivity {
             btnWatchAd.setVisibility(android.view.View.GONE);
         } else {
             long mins = userManager.getRemainingTime() / 60000;
-            tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة اليوم");
+            tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة هذا الأسبوع");
             tvRemainingTime.setTextColor(
                 mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
             // أظهر زر المكافأة فقط لو فيه مكافآت متبقية اليوم
             boolean canReward = userManager.canEarnReward();
             btnWatchAd.setVisibility(canReward ? android.view.View.VISIBLE : android.view.View.GONE);
             if (canReward) {
-                int left = userManager.remainingRewardsToday();
-                btnWatchAd.setText("🎬 شاهد إعلان واحصل +30 دقيقة (" + left + " متبقية)");
+                btnWatchAd.setText("🎬 شاهد إعلان مجاني واحصل +30 دقيقة");
             }
         }
     }

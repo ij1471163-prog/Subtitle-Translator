@@ -10,7 +10,7 @@ import java.util.Locale;
 public class UserManager {
 
     // ── حدود الاستخدام ──────────────────────────────────────────
-    private static final long FREE_LIMIT_MS  = 10  * 60 * 1000L;  // 10 دقائق يومياً
+    private static final long FREE_LIMIT_MS  = 30  * 60 * 1000L;  // 30 دقيقة أسبوعياً
     private static final long PLUS_LIMIT_MS  = 180 * 60 * 1000L;  // 3 ساعات يومياً
     private static final long PRO_LIMIT_MS   = 480 * 60 * 1000L;  // 8 ساعات يومياً
 
@@ -101,57 +101,80 @@ public class UserManager {
         translationStartTime = 0;
     }
 
-    // ── reset يومي ───────────────────────────────────────────────
+    // ── reset (يومي للمشتركين، أسبوعي للمجانيين) ────────────────
     private void resetDailyIfNewDay() {
-        // كل الخطط تتجدد يومياً بما فيها FREE
-        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
-        String last  = prefs.getString("last_date", "");
-        if (!today.equals(last)) {
-            prefs.edit()
-                .putLong("daily_usage_ms", 0)
-                .putString("last_date", today)
-                .apply();
+        if (getCurrentTier() == Tier.FREE) {
+            // المجاني يتجدد كل أسبوع
+            String thisWeek = getWeekKey();
+            String lastWeek = prefs.getString("last_week", "");
+            if (!thisWeek.equals(lastWeek)) {
+                prefs.edit()
+                    .putLong("daily_usage_ms", 0)
+                    .putString("last_week", thisWeek)
+                    .apply();
+            }
+        } else {
+            // PLUS/PRO يتجددون يومياً
+            String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+            String last  = prefs.getString("last_date", "");
+            if (!today.equals(last)) {
+                prefs.edit()
+                    .putLong("daily_usage_ms", 0)
+                    .putString("last_date", today)
+                    .apply();
+            }
         }
+    }
+
+    private String getWeekKey() {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        int year = cal.get(java.util.Calendar.YEAR);
+        int week = cal.get(java.util.Calendar.WEEK_OF_YEAR);
+        return year + "-W" + week;
     }
 
     // ── مكافأة مشاهدة إعلان (+30 دقيقة) ────────────────────────
     private static final long REWARD_BONUS_MS = 30 * 60 * 1000L; // 30 دقيقة
     private static final String KEY_REWARD_COUNT = "reward_count_today";
     private static final String KEY_REWARD_DATE  = "reward_date";
-    private static final int MAX_REWARDS_PER_DAY = 3; // حد أقصى 3 مكافآت يومياً = 90 دقيقة
+    private static final int MAX_REWARDS_PER_WEEK = 1; // مقطع واحد بس لكل أسبوع = 30 دقيقة إضافية
 
-    /** هل يقدر يحصل على مكافأة إضافية اليوم؟ */
+    /** هل يقدر يحصل على مكافأة هذا الأسبوع؟ (مرة وحدة بس لما يخلص الرصيد) */
     public boolean canEarnReward() {
-        if (getCurrentTier() != Tier.FREE) return false; // PLUS/PRO ما يحتاجون
-        return getRewardCountToday() < MAX_REWARDS_PER_DAY;
+        if (getCurrentTier() != Tier.FREE) return false;
+        if (getRemainingTime() > 0) return false; // لو فيه رصيد متبقي ما يحتاج إعلان
+        return getRewardCountThisWeek() < MAX_REWARDS_PER_WEEK;
     }
 
-    /** عدد المكافآت المتبقية اليوم */
-    public int remainingRewardsToday() {
-        return Math.max(0, MAX_REWARDS_PER_DAY - getRewardCountToday());
+    /** هل شاهد الإعلان هذا الأسبوع؟ */
+    public boolean hasEarnedRewardThisWeek() {
+        return getRewardCountThisWeek() >= MAX_REWARDS_PER_WEEK;
     }
 
     /** يُستدعى بعد ما يشاهد المستخدم الإعلان كامل - يضيف +30 دقيقة لرصيده */
     public void applyRewardBonus() {
-        if (!canEarnReward()) return;
+        if (getRewardCountThisWeek() >= MAX_REWARDS_PER_WEEK) return;
         resetDailyIfNewDay();
         long used = prefs.getLong("daily_usage_ms", 0);
-        // نطرح 30 دقيقة من الاستخدام (= نضيف للرصيد المتبقي)
         long newUsed = Math.max(0, used - REWARD_BONUS_MS);
-        String today = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
-        int count = getRewardCountToday() + 1;
+        int count = getRewardCountThisWeek() + 1;
         prefs.edit()
             .putLong("daily_usage_ms", newUsed)
             .putInt(KEY_REWARD_COUNT, count)
-            .putString(KEY_REWARD_DATE, today)
+            .putString(KEY_REWARD_DATE, getWeekKey())
             .apply();
     }
 
-    private int getRewardCountToday() {
-        String today = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
+    private int getRewardCountThisWeek() {
+        String thisWeek = getWeekKey();
         String saved = prefs.getString(KEY_REWARD_DATE, "");
-        if (!today.equals(saved)) return 0;
+        if (!thisWeek.equals(saved)) return 0;
         return prefs.getInt(KEY_REWARD_COUNT, 0);
+    }
+
+    // للتوافق مع الكود القديم
+    public int remainingRewardsToday() {
+        return hasEarnedRewardThisWeek() ? 0 : 1;
     }
 
     // ── معلومات الخطة للعرض ─────────────────────────────────────
@@ -167,7 +190,7 @@ public class UserManager {
         switch (getCurrentTier()) {
             case PRO:  return "8 ساعات/يوم";
             case PLUS: return "3 ساعات/يوم";
-            default:   return "10 دقائق/يوم";
+            default:   return "30 دقيقة/أسبوع";
         }
     }
 }
