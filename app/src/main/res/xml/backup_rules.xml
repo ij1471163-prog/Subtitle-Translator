@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    backup_rules.xml
+    ════════════════
+    يحدد ما يُحفظ على Google Drive عند الحذف وإعادة التثبيت.
+
+    السبب: نستخدم allowBackup لحفظ رصيد المستخدم المجاني (30 دقيقة)
+    بحيث لو حذف التطبيق وأعاد تثبيته يرجع رصيده - بدون تسجيل دخول.
+
+    ما يُحفظ:
+    - user_data: رصيد الترجمة المجاني واستخدام المستخدم
+    - billing_prefs: وقت آخر تحقق من الاشتراك (للـ grace period)
+
+    ما لا يُحفظ:
+    - subtitle_prefs: إعدادات اللغة والواجهة (يُعاد اختيارها بسهولة)
+    - أي بيانات حساسة أو مفاتيح API
+-->
+<full-backup-content>
+
+    <!-- ✅ يُحفظ: رصيد المستخدم واستخدامه -->
+    <include
+        domain="sharedpref"
+        path="user_data.xml" />
+
+    <!-- ✅ يُحفظ: وقت آخر تحقق من الاشتراك (grace period offline) -->
+    <include
+        domain="sharedpref"
+        path="billing_prefs.xml" />
+
+    <!-- ❌ لا يُحفظ: إعدادات الواجهة (اللغة، حجم الخط، موضع الترجمة) -->
+    <exclude
+        domain="sharedpref"
+        path="subtitle_prefs.xml" />
+
+</full-backup-content>

@@ -26,8 +26,17 @@
     <!-- Android 13+ Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        allowBackup="true":
+        يحفظ رصيد المستخدم المجاني على Google Drive تلقائياً.
+        الهدف: لو المستخدم حذف التطبيق وأعاد تثبيته، يرجع رصيده بدون تسجيل دخول.
+        fullBackupContent: يحدد بدقة ما يُحفظ (user_data, billing_prefs فقط).
+        لا يُحفظ أي بيانات حساسة أو مفاتيح API.
+        مرجع: https://developer.android.com/guide/topics/data/autobackup
+    -->
     <application
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.SubtitleTranslator"
