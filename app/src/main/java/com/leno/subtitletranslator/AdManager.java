@@ -53,14 +53,11 @@ public class AdManager {
     private static final String KEY_INTERSTITIAL_PAUSE = "interstitial_pause_until";
     private static final String KEY_APPOPEN_DATE = "appopen_date";
     private static final String KEY_APPOPEN_COUNT = "appopen_count";
-    // ⚠️ معرفات إعلانية حقيقية (SubtitleTranslator - AdMob) - App ID الرئيسي يروح بالـ AndroidManifest.xml
-    // App ID (يُستخدم بالـ Manifest بس، مو هنا): ca-app-pub-8342669226787286~9358139906
-    private static final String APPOPEN_UNIT_ID = "ca-app-pub-8342669226787286/9170437642"; // حقيقي
-    private static final String REWARDED_UNIT_ID = "ca-app-pub-8342669226787286/9849094490"; // حقيقي
-
-    // ⚠️ لسا test IDs - بدّلها بمعرفات Banner/Interstitial الحقيقية حقتك أول ما تسويها
-    private static final String BANNER_UNIT_ID_TEST = "ca-app-pub-8342669226787286/6727984393";
-    private static final String INTERSTITIAL_UNIT_ID_TEST = "ca-app-pub-8342669226787286/3144971760";
+    // معرفات إعلانية حقيقية - App ID: ca-app-pub-8342669226787286~9358139906 (بالـ AndroidManifest)
+    private static final String APPOPEN_UNIT_ID      = "ca-app-pub-8342669226787286/9170437642";
+    private static final String REWARDED_UNIT_ID     = "ca-app-pub-8342669226787286/9849094490";
+    private static final String BANNER_UNIT_ID       = "ca-app-pub-8342669226787286/6727984393";
+    private static final String INTERSTITIAL_UNIT_ID = "ca-app-pub-8342669226787286/3144971760";
 
     private static volatile boolean initialized = false;
     private static volatile InterstitialAd interstitialAd = null;
@@ -111,7 +108,7 @@ public class AdManager {
             return;
         }
         AdView bannerView = new AdView(activity);
-        bannerView.setAdUnitId(BANNER_UNIT_ID_TEST); // TODO: بدّلها بمعرف Banner الحقيقي حقك
+        bannerView.setAdUnitId(BANNER_UNIT_ID);
         bannerView.setAdSize(getAdaptiveBannerSize(activity));
         bannerView.setAdListener(new AdListener(){
             @Override public void onAdLoaded(){
@@ -141,7 +138,7 @@ public class AdManager {
     private void preloadInterstitial(){
         if(interstitialLoading || interstitialAd != null) return;
         interstitialLoading = true;
-        InterstitialAd.load(appContext, INTERSTITIAL_UNIT_ID_TEST, new AdRequest.Builder().build(),
+        InterstitialAd.load(appContext, INTERSTITIAL_UNIT_ID, new AdRequest.Builder().build(),
                 new InterstitialAdLoadCallback(){
                     @Override public void onAdLoaded(@NonNull InterstitialAd ad){
                         interstitialAd = ad;
