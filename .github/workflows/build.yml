@@ -59,7 +59,8 @@ jobs:
         run: |
           ./gradlew assembleDebug \
             --no-daemon \
-            --build-cache \
+            --no-build-cache \
+            --rerun-tasks \
             --parallel
 
       # =========================
