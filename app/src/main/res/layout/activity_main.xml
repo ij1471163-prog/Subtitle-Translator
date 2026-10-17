@@ -172,6 +172,16 @@
         android:textSize="16sp"
         android:layout_marginTop="8dp" />
 
+    <!-- زر مشاهدة إعلان مقابل +30 دقيقة (يظهر للمجانيين فقط) -->
+    <Button
+        android:id="@+id/btnWatchAd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🎬 شاهد إعلان واحصل +30 دقيقة"
+        android:textSize="14sp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
     <!-- مساحة الإعلان -->
     <FrameLayout
         android:id="@+id/adContainer"

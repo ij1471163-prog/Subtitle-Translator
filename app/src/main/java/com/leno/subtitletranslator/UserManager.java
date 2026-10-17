@@ -114,6 +114,46 @@ public class UserManager {
         }
     }
 
+    // ── مكافأة مشاهدة إعلان (+30 دقيقة) ────────────────────────
+    private static final long REWARD_BONUS_MS = 30 * 60 * 1000L; // 30 دقيقة
+    private static final String KEY_REWARD_COUNT = "reward_count_today";
+    private static final String KEY_REWARD_DATE  = "reward_date";
+    private static final int MAX_REWARDS_PER_DAY = 3; // حد أقصى 3 مكافآت يومياً = 90 دقيقة
+
+    /** هل يقدر يحصل على مكافأة إضافية اليوم؟ */
+    public boolean canEarnReward() {
+        if (getCurrentTier() != Tier.FREE) return false; // PLUS/PRO ما يحتاجون
+        return getRewardCountToday() < MAX_REWARDS_PER_DAY;
+    }
+
+    /** عدد المكافآت المتبقية اليوم */
+    public int remainingRewardsToday() {
+        return Math.max(0, MAX_REWARDS_PER_DAY - getRewardCountToday());
+    }
+
+    /** يُستدعى بعد ما يشاهد المستخدم الإعلان كامل - يضيف +30 دقيقة لرصيده */
+    public void applyRewardBonus() {
+        if (!canEarnReward()) return;
+        resetDailyIfNewDay();
+        long used = prefs.getLong("daily_usage_ms", 0);
+        // نطرح 30 دقيقة من الاستخدام (= نضيف للرصيد المتبقي)
+        long newUsed = Math.max(0, used - REWARD_BONUS_MS);
+        String today = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
+        int count = getRewardCountToday() + 1;
+        prefs.edit()
+            .putLong("daily_usage_ms", newUsed)
+            .putInt(KEY_REWARD_COUNT, count)
+            .putString(KEY_REWARD_DATE, today)
+            .apply();
+    }
+
+    private int getRewardCountToday() {
+        String today = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date());
+        String saved = prefs.getString(KEY_REWARD_DATE, "");
+        if (!today.equals(saved)) return 0;
+        return prefs.getInt(KEY_REWARD_COUNT, 0);
+    }
+
     // ── معلومات الخطة للعرض ─────────────────────────────────────
     public String getTierName() {
         switch (getCurrentTier()) {

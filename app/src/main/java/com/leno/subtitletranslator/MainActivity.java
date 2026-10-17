@@ -37,7 +37,7 @@ public class MainActivity extends AppCompatActivity {
 
     private Spinner     spinnerSource, spinnerTarget;
     private TextView    tvStatus, tvRemainingTime;
-    private Button      btnStart, btnStop;
+    private Button      btnStart, btnStop, btnWatchAd;
     private ProgressBar progressBar;
     private UserManager userManager;
     private SeekBar seekFontSize;
@@ -113,11 +113,13 @@ public class MainActivity extends AppCompatActivity {
         tvRemainingTime = findViewById(R.id.tvRemainingTime);
         btnStart        = findViewById(R.id.btnStart);
         btnStop         = findViewById(R.id.btnStop);
+        btnWatchAd      = findViewById(R.id.btnWatchAd);
         progressBar     = findViewById(R.id.progressBar);
 
         setupSpinners();
         btnStart.setOnClickListener(v -> attemptStart());
         btnStop.setOnClickListener(v -> stopTranslation());
+        btnWatchAd.setOnClickListener(v -> watchAdForBonus());
         btnStop.setEnabled(false);
         seekFontSize = findViewById(R.id.seekFontSize);
         spinnerPosition = findViewById(R.id.spinnerPosition);
@@ -346,17 +348,57 @@ public class MainActivity extends AppCompatActivity {
         dlg.show();
     }
 
+    // ─────────────────────── Watch Ad for Bonus ──────────────────
+
+    private void watchAdForBonus() {
+        if (!userManager.canEarnReward()) {
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("وصلت الحد")
+                .setMessage("استفدت من المكافآت اليومية كلها (٣ مرات). ارجع غداً أو اشترك للاستمتام بدون حدود!")
+                .setPositiveButton("اشترك الحين", (d, w) -> showUpgradeDialog())
+                .setNegativeButton("لاحقاً", null)
+                .show();
+            return;
+        }
+        if (!adManager.isRewardedReady()) {
+            android.widget.Toast.makeText(this, "الإعلان ما اتحمل بعد، جرب مرة ثانية", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        adManager.showRewarded(this,
+            () -> { // onEarned - شاهد الإعلان كامل
+                userManager.applyRewardBonus();
+                int remaining = userManager.remainingRewardsToday();
+                String msg = remaining > 0
+                    ? "✅ أضفنا لك 30 دقيقة! متبقي " + remaining + " مكافأة اليوم"
+                    : "✅ أضفنا لك 30 دقيقة! استنفدت مكافآت اليوم";
+                android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show();
+                updateStatus();
+            },
+            () -> { // onSkippedOrFailed
+                android.widget.Toast.makeText(this, "لازم تكمل الإعلان للحصول على المكافأة", android.widget.Toast.LENGTH_SHORT).show();
+            }
+        );
+    }
+
     // ─────────────────────── Status ──────────────────────────────
 
     private void updateStatus() {
         if (userManager.isSubscribed()) {
             tvRemainingTime.setText("✨ مشترك — غير محدود");
             tvRemainingTime.setTextColor(Color.parseColor("#4CAF50"));
+            btnWatchAd.setVisibility(android.view.View.GONE);
         } else {
             long mins = userManager.getRemainingTime() / 60000;
             tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة اليوم");
             tvRemainingTime.setTextColor(
                 mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+            // أظهر زر المكافأة فقط لو فيه مكافآت متبقية اليوم
+            boolean canReward = userManager.canEarnReward();
+            btnWatchAd.setVisibility(canReward ? android.view.View.VISIBLE : android.view.View.GONE);
+            if (canReward) {
+                int left = userManager.remainingRewardsToday();
+                btnWatchAd.setText("🎬 شاهد إعلان واحصل +30 دقيقة (" + left + " متبقية)");
+            }
         }
     }
 
