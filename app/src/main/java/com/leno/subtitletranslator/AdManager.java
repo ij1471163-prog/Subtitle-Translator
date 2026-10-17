@@ -54,8 +54,8 @@ public class AdManager {
     private static final String REWARDED_UNIT_ID = "ca-app-pub-8342669226787286/9849094490"; // حقيقي
 
     // ⚠️ لسا test IDs - بدّلها بمعرفات Banner/Interstitial الحقيقية حقتك أول ما تسويها
-    private static final String BANNER_UNIT_ID_TEST = "ca-app-pub-3940256099942544/9214589741";
-    private static final String INTERSTITIAL_UNIT_ID_TEST = "ca-app-pub-3940256099942544/1033173712";
+    private static final String BANNER_UNIT_ID_TEST = "ca-app-pub-8342669226787286/6727984393";
+    private static final String INTERSTITIAL_UNIT_ID_TEST = "ca-app-pub-8342669226787286/3144971760";
 
     private static volatile boolean initialized = false;
     private static volatile InterstitialAd interstitialAd = null;
