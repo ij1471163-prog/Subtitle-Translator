@@ -163,6 +163,16 @@
         android:layout_marginTop="8dp"
         android:enabled="false" />
 
+    <!-- زر مشاهدة إعلان - مخفي دائماً -->
+    <Button
+        android:id="@+id/btnWatchAd"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🎁 شاهد إعلان للحصول على وقت إضافي"
+        android:textSize="16sp"
+        android:layout_marginTop="8dp"
+        android:visibility="gone" />
+
     <!-- الاشتراك -->
     <Button
         android:id="@+id/btnSubscribe"
