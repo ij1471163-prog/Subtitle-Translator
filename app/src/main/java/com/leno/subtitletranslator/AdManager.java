@@ -44,7 +44,6 @@ public class AdManager {
     private static final String KEY_SESSION_COUNT = "session_count";
 
     private static final long INTERSTITIAL_COOLDOWN_MS = 3 * 60 * 1000L; // 3 دقائق بين كل إعلان
-    private static final int MIN_SESSIONS_BEFORE_ADS = 2; // بدون إعلان أول جلستين
     private static final int MAX_APPOPEN_PER_DAY = 1;
     private static final int MAX_INTERSTITIAL_PER_DAY = 3;   // أقصى 3 إعلانات/يوم
     private static final long INTERSTITIAL_PAUSE_DAYS = 2;   // بعدين يرتاح يومين
@@ -83,17 +82,12 @@ public class AdManager {
         });
     }
 
-    /** سجّل جلسة استخدام جديدة - استدعها مرة بكل onCreate لـ MainActivity. */
-    public void recordSessionOpened(){
-        int count = prefs.getInt(KEY_SESSION_COUNT, 0) + 1;
-        prefs.edit().putInt(KEY_SESSION_COUNT, count).apply();
-    }
+    /** لم تعد مستخدمة - الإعلانات تظهر فوراً للمجاني */
+    public void recordSessionOpened(){ }
 
     private boolean isEligibleForAds(Context context){
         UserManager.Tier tier = new UserManager(context).getCurrentTier();
-        if(tier != UserManager.Tier.FREE) return false; // PLUS/PRO بدون إعلانات نهائياً
-        int sessions = prefs.getInt(KEY_SESSION_COUNT, 0);
-        return sessions > MIN_SESSIONS_BEFORE_ADS;
+        return tier == UserManager.Tier.FREE; // PLUS/PRO بدون إعلانات - المجاني يشوف فوراً
     }
 
     // ===================== Banner =====================
