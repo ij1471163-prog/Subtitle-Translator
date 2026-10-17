@@ -155,11 +155,50 @@ public class UserManager {
         prefs.edit().putLong(KEY_LAST_INTERSTITIAL_FREE, System.currentTimeMillis()).apply();
     }
 
-    // ── للتوافق مع الكود القديم (MainActivity) ──────────────────
-    public boolean canEarnReward() { return false; } // أُلغي - ما في Rewarded للمجاني
-    public boolean hasEarnedRewardThisWeek() { return false; }
-    public void applyRewardBonus() {} // لا شيء
-    public int remainingRewardsToday() { return 0; }
+    // ── مكافأة مشاهدة الإعلان (+15 دقيقة) ─────────────────────
+    private static final long REWARD_BONUS_MS    = 15 * 60 * 1000L; // 15 دقيقة لكل إعلان
+    private static final int  MAX_REWARDS_PER_DAY = 3;               // حد 3 مرات باليوم
+    private static final String KEY_REWARD_DATE   = "reward_date";
+    private static final String KEY_REWARD_COUNT  = "reward_count";
+
+    /** هل المستخدم يقدر يشاهد إعلان مكافأة الآن؟ */
+    public boolean canEarnReward() {
+        if (getCurrentTier() != Tier.FREE) return false; // المشتركين ما يحتاجون
+        return getRemainingRewardsToday() < MAX_REWARDS_PER_DAY;
+    }
+
+    /** كم مرة باقية اليوم */
+    public int remainingRewardsToday() {
+        return MAX_REWARDS_PER_DAY - getRemainingRewardsToday();
+    }
+
+    private int getRemainingRewardsToday() {
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        String savedDay = prefs.getString(KEY_REWARD_DATE, "");
+        if (!today.equals(savedDay)) {
+            prefs.edit().putString(KEY_REWARD_DATE, today).putInt(KEY_REWARD_COUNT, 0).apply();
+            return 0;
+        }
+        return prefs.getInt(KEY_REWARD_COUNT, 0);
+    }
+
+    /** يُستدعى بعد انتهاء الإعلان - يضيف +15 دقيقة */
+    public void applyRewardBonus() {
+        if (getCurrentTier() != Tier.FREE) return;
+        // أضف 15 دقيقة عن طريق تقليل daily_usage_ms
+        long used = prefs.getLong("daily_usage_ms", 0);
+        long newUsed = Math.max(0, used - REWARD_BONUS_MS);
+        // سجّل الاستخدام
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
+        int count = getRemainingRewardsToday() + 1;
+        prefs.edit()
+            .putLong("daily_usage_ms", newUsed)
+            .putString(KEY_REWARD_DATE, today)
+            .putInt(KEY_REWARD_COUNT, count)
+            .apply();
+    }
+
+    public boolean hasEarnedRewardThisWeek() { return false; } // للتوافق
 
     // ── معلومات الخطة للعرض ─────────────────────────────────────
     public String getTierName() {

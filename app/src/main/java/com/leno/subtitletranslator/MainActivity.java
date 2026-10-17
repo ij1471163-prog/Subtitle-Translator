@@ -386,7 +386,29 @@ public class MainActivity extends AppCompatActivity {
     // ─────────────────────── Watch Ad for Bonus ──────────────────
 
     private void watchAdForBonus() {
-        // غير مستخدمة - الإعلان يظهر تلقائياً عند انتهاء الرصيد
+        if (!userManager.canEarnReward()) {
+            Toast.makeText(this, "✅ استنفدت حد الإعلانات اليومي (3 مرات)", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!adManager.isRewardedReady()) {
+            Toast.makeText(this, "⏳ جاري تحميل الإعلان، حاول بعد ثوانٍ", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        adManager.showRewarded(this,
+            () -> { // شاف الإعلان كامل
+                userManager.applyRewardBonus();
+                runOnUiThread(() -> {
+                    updateStatus();
+                    int remaining = userManager.remainingRewardsToday();
+                    Toast.makeText(this,
+                        "🎉 +15 دقيقة! متبقي " + remaining + " إعلانات اليوم",
+                        Toast.LENGTH_LONG).show();
+                });
+            },
+            () -> { // أغلق بدون مشاهدة
+                Toast.makeText(this, "شاهد الإعلان كاملاً للحصول على المكافأة", Toast.LENGTH_SHORT).show();
+            }
+        );
     }
 
     // ─────────────────────── Status ──────────────────────────────
@@ -406,7 +428,19 @@ public class MainActivity extends AppCompatActivity {
                 tvRemainingTime.setTextColor(Color.parseColor("#F44336"));
             }
         }
-        btnWatchAd.setVisibility(android.view.View.GONE); // لا يوجد زر مكافأة
+        // زر "شاهد إعلان" - يظهر للمجاني فقط لما رصيده أقل من 20 دقيقة
+        UserManager.Tier curTier = userManager.getCurrentTier();
+        long remaining = userManager.getRemainingTime();
+        boolean showAdBtn = (curTier == UserManager.Tier.FREE)
+                && (remaining < 20 * 60 * 1000L)
+                && userManager.canEarnReward();
+        if (showAdBtn) {
+            btnWatchAd.setVisibility(android.view.View.VISIBLE);
+            int rewardLeft = userManager.remainingRewardsToday();
+            btnWatchAd.setText("📺 شاهد إعلان واحصل +15 دقيقة (" + rewardLeft + " متبقية)");
+        } else {
+            btnWatchAd.setVisibility(android.view.View.GONE);
+        }
 
         // زر الـ offline - يظهر للمجانيين فقط (لتشجيعهم على الاشتراك)
         UserManager.Tier tier = userManager.getCurrentTier();
