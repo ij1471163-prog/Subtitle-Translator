@@ -300,11 +300,13 @@ public class SubtitleService extends Service {
         if(micRecord.getState()!=AudioRecord.STATE_INITIALIZED){showOverlay("خطأ في الميكروفون");return;}
         micRecord.startRecording();
         showOverlay("يستمع بالميكروفون");
+        final AudioRecord currentMicRecord=micRecord;
         new Thread(()->{
             short[]b=new short[buf];
             while(running){
-                int r=micRecord.read(b,0,b.length);
-                if(r>0)sendToEngine(b,r);
+                int r=currentMicRecord.read(b,0,b.length);
+                if(r<=0)break; // إذا توقف التسجيل (بسبب stop) اخرج من الحلقة فوراً
+                if(running)sendToEngine(b,r); // تحقق من running مرة ثانية بعد القراءة
             }
         },"MicThread").start();
     }
@@ -343,13 +345,19 @@ public class SubtitleService extends Service {
         return START_STICKY;
     }
     @Override public void onDestroy(){
-        running=false;
-        if(usageTracker!=null) usageTracker.stopTranslation(); // FIX: يغطي كل مسارات الإيقاف (زر التطبيق، الإشعار، أو النظام)
+        running=false; // أوقف الـ loop أولاً
+        // أوقف micRecord فوراً حتى يخرج MicThread من micRecord.read() المعلق
+        if(micRecord!=null){
+            try{micRecord.stop();}catch(Exception ignored){}
+        }
+        if(usageTracker!=null) usageTracker.stopTranslation();
         handler.removeCallbacksAndMessages(null);
         if(gladia!=null)gladia.stop();
         if(deepgram!=null)deepgram.stop();
         if(audioCapture!=null)audioCapture.stop();
-        if(micRecord!=null){try{micRecord.stop();micRecord.release();}catch(Exception ignored){}}
+        // release بعد stop بفترة قصيرة حتى يتأكد الـ thread خرج
+        if(micRecord!=null){try{micRecord.release();}catch(Exception ignored){} micRecord=null;}
+        if(speechRecognizer!=null){try{speechRecognizer.destroy();}catch(Exception ignored){} speechRecognizer=null;}
         if(wakeLock!=null&&wakeLock.isHeld())wakeLock.release();
         if(wm!=null&&overlay!=null){try{wm.removeView(overlay);}catch(Exception ignored){}}
         try{unregisterReceiver(screenOff);}catch(Exception ignored){}
