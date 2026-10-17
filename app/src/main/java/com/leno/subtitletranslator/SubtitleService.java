@@ -34,6 +34,7 @@ public class SubtitleService extends Service {
     private static final String CHANNEL_ID="subtitle_ch";
     private static final int NOTIF_ID=1001;
     public static final String ACTION_STOP="com.leno.subtitletranslator.STOP";
+    public static volatile boolean isRunning = false; // flag للـ MainActivity
     private static final long WAKELOCK_SLICE_MS=10*60*1000L;
     private WindowManager wm;
     private TextView overlay;
@@ -73,6 +74,7 @@ public class SubtitleService extends Service {
         startForegroundCompat();
         addOverlay();
         running=true;
+        isRunning=true;
         usageTracker=new UserManager(this);
         usageTracker.startTranslation(); // يبدأ جلسة التتبع (مش يحسب رصيد بعد)
         quota=new EngineQuotaManager(this);
@@ -374,7 +376,8 @@ public class SubtitleService extends Service {
         return START_STICKY;
     }
     @Override public void onDestroy(){
-        running=false; // أوقف الـ loop أولاً
+        running=false;
+        isRunning=false; // أعلم MainActivity إن الخدمة وقفت
         // أوقف micRecord فوراً حتى يخرج MicThread من micRecord.read() المعلق
         if(micRecord!=null){
             try{micRecord.stop();}catch(Exception ignored){}

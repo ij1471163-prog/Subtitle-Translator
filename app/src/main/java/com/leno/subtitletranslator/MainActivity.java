@@ -106,6 +106,17 @@ public class MainActivity extends AppCompatActivity {
         // تحقق من الاشتراك مع Google Play في كل مرة يفتح التطبيق
         billingManager.restorePurchases();
         updateStatus();
+        // زامن حالة الأزرار مع الـ service الفعلي
+        syncServiceState();
+    }
+
+    private void syncServiceState() {
+        boolean running = SubtitleService.isRunning;
+        btnStart.setEnabled(!running);
+        btnStart.setAlpha(running ? 0.4f : 1f);
+        btnStop.setEnabled(running);
+        btnStop.setAlpha(running ? 1f : 0.4f);
+        tvStatus.setText(running ? "🟢 الترجمة شغالة — ارجع للفيديو" : "⭕ متوقف");
     }
 
     @Override
