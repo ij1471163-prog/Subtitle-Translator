@@ -10,9 +10,9 @@ import java.util.Locale;
 public class UserManager {
 
     // ── حدود الاستخدام ──────────────────────────────────────────
-    private static final long FREE_LIMIT_MS  = 30  * 60 * 1000L;  // 30 دقيقة
-    private static final long PLUS_LIMIT_MS  = 180 * 60 * 1000L;  // 3 ساعات
-    private static final long PRO_LIMIT_MS   = 480 * 60 * 1000L;  // 8 ساعات
+    private static final long FREE_LIMIT_MS  = 10  * 60 * 1000L;  // 10 دقائق يومياً
+    private static final long PLUS_LIMIT_MS  = 180 * 60 * 1000L;  // 3 ساعات يومياً
+    private static final long PRO_LIMIT_MS   = 480 * 60 * 1000L;  // 8 ساعات يومياً
 
     // ── Product IDs (نفس Google Play Console) ───────────────────
     public static final String SKU_PLUS_WEEKLY   = "plus_weekly";
@@ -103,8 +103,7 @@ public class UserManager {
 
     // ── reset يومي ───────────────────────────────────────────────
     private void resetDailyIfNewDay() {
-        // FREE لا يتجدد أبداً
-        if(getCurrentTier()==Tier.FREE) return;
+        // كل الخطط تتجدد يومياً بما فيها FREE
         String today = new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date());
         String last  = prefs.getString("last_date", "");
         if (!today.equals(last)) {
@@ -128,7 +127,7 @@ public class UserManager {
         switch (getCurrentTier()) {
             case PRO:  return "8 ساعات/يوم";
             case PLUS: return "3 ساعات/يوم";
-            default:   return "30 دقيقة/يوم";
+            default:   return "10 دقائق/يوم";
         }
     }
 }
