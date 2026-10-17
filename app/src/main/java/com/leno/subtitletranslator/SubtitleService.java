@@ -73,11 +73,12 @@ public class SubtitleService extends Service {
         startForegroundCompat();
         addOverlay();
         running=true;
-        usageTracker=new UserManager(this); // FIX
-        usageTracker.startTranslation(); // FIX: التتبع يبدأ هنا - مع الخدمة الفعلية نفسها، مو مع الشاشة
+        usageTracker=new UserManager(this);
+        usageTracker.startTranslation(); // يبدأ جلسة التتبع (مش يحسب رصيد بعد)
         quota=new EngineQuotaManager(this);
         startBestEngine();
         startAudioCapture();
+        handler.postDelayed(checkSilenceRunnable, 1000); // ابدأ فحص الصمت الدوري
     }
 
     private void startForegroundCompat(){
@@ -166,21 +167,47 @@ public class SubtitleService extends Service {
         });
     }
 
-    // Smart Sleep - بدون أي تغيير
+    // ===================== Smart Usage - تقليل استهلاك الرصيد =====================
+    // المبدأ: الرصيد يُحسب فقط عند وجود صوت أو نص فعلي، لا بالوقت الكلي
     private volatile long lastAudioTime = System.currentTimeMillis();
     private volatile boolean sleeping = false;
+    private volatile boolean isSpeechActive = false;  // هل في كلام فعلي الآن؟
+    private volatile long lastSpeechTime = 0;         // آخر مرة جاء فيها نص
+    private static final long SILENCE_PAUSE_MS = 5000; // 5 ثواني صمت = يوقف عداد الرصيد
 
     private boolean hasAudio(short[]data,int len){
         long sum=0;
         for(int i=0;i<len;i++) sum+=Math.abs(data[i]);
-        return (sum/len) > 200; // threshold
+        return (sum/len) > 200;
     }
 
+    /** يُستدعى من engines عند وصول أي نص (interim أو final) - يشغّل عداد الرصيد */
+    private void onSpeechDetected(){
+        lastSpeechTime = System.currentTimeMillis();
+        if(!isSpeechActive){
+            isSpeechActive = true;
+            usageTracker.resumeActiveUsage(); // ابدأ/استأنف حساب الرصيد
+        }
+    }
+
+    /** يُفحص دورياً - لو انقطع الكلام 5 ثواني يوقف عداد الرصيد */
+    private final Runnable checkSilenceRunnable = new Runnable(){
+        @Override public void run(){
+            if(!running) return;
+            if(isSpeechActive && lastSpeechTime>0){
+                long silent = System.currentTimeMillis()-lastSpeechTime;
+                if(silent >= SILENCE_PAUSE_MS){
+                    isSpeechActive = false;
+                    usageTracker.pauseActiveUsage(); // وقف حساب الرصيد أثناء الصمت
+                }
+            }
+            handler.postDelayed(this, 1000); // فحص كل ثانية
+        }
+    };
+
     private void sendToEngine(short[]data,int len){
-        // تحقق إذا في صوت حقيقي
         if(!hasAudio(data,len)){
             long silent = System.currentTimeMillis()-lastAudioTime;
-            // سكوت 3 ثواني = وقف الإرسال
             if(silent>3000) sleeping=true;
             if(sleeping) return;
         } else {
@@ -189,11 +216,11 @@ public class SubtitleService extends Service {
         }
         switch(activeEngine){
             case GLADIA: if(gladia!=null)gladia.sendAudio(data,len); break;
-            case DEEPGRAM:     if(deepgram!=null)deepgram.sendAudio(data,len); break;
+            case DEEPGRAM: if(deepgram!=null)deepgram.sendAudio(data,len); break;
         }
-        // سجّل الاستخدام (~62.5ms لكل buffer 16000hz)
         quota.recordUsage(activeEngine,(long)(len/16.0));
     }
+    // ===================== نهاية Smart Usage =====================
 
     // ===================== نظام توقيت الكابشن الحي (Netflix-style) =====================
     // FIX: تحولت من trailing debounce إلى throttle.
@@ -224,6 +251,7 @@ public class SubtitleService extends Service {
     /** يُستدعى من Deepgram لكل نتيجة (interim أو final). */
     private void handleTranscript(String text,boolean isFinal){
         if(text==null||text.trim().isEmpty())return;
+        onSpeechDetected(); // كلام وصل = شغّل عداد الرصيد
         if(isFinal){
             handler.removeCallbacks(interimTranslateRunnable);
             interimScheduled=false;
@@ -262,6 +290,7 @@ public class SubtitleService extends Service {
     /** مسار Gladia (نتائج نهائية فقط) - يمر بنفس نظام الكابشن الحي. */
     private void translate(String text){
         if(text==null||text.trim().isEmpty())return;
+        onSpeechDetected(); // كلام وصل = شغّل عداد الرصيد
         int seq=transcriptSeq.incrementAndGet();
         translateAndShow(text,true,seq);
     }

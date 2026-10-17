@@ -89,18 +89,44 @@ public class UserManager {
         return Math.max(0, getDailyLimit() - used);
     }
 
-    // ── تتبع الاستخدام ───────────────────────────────────────────
+    // ── تتبع الاستخدام الذكي ─────────────────────────────────────
+    // الرصيد يُحسب فقط أثناء وجود كلام فعلي، لا خلال الصمت أو الموسيقى
+
+    /** يبدأ الجلسة (لا يحسب رصيداً بعد - ينتظر resumeActiveUsage) */
     public void startTranslation() {
-        translationStartTime = System.currentTimeMillis();
-        prefs.edit().putLong("session_start", translationStartTime).apply();
+        translationStartTime = 0; // لا نبدأ العداد إلا عند كلام فعلي
+        prefs.edit().putLong("active_segment_start", 0).apply();
     }
 
-    public void stopTranslation() {
-        if (translationStartTime == 0) return;
-        long duration = System.currentTimeMillis() - translationStartTime;
-        long used = prefs.getLong("daily_usage_ms", 0);
-        prefs.edit().putLong("daily_usage_ms", used + duration).apply();
+    /** يُستدعى عند وصول كلام - يبدأ حساب الرصيد */
+    public void resumeActiveUsage() {
+        long now = System.currentTimeMillis();
+        long segStart = prefs.getLong("active_segment_start", 0);
+        if (segStart == 0) {
+            // ابدأ مقطع جديد
+            prefs.edit().putLong("active_segment_start", now).apply();
+            translationStartTime = now;
+        }
+    }
+
+    /** يُستدعى عند الصمت - يوقف حساب الرصيد ويحفظ ما استهلك */
+    public void pauseActiveUsage() {
+        long segStart = prefs.getLong("active_segment_start", 0);
+        if (segStart == 0) return;
+        long duration = System.currentTimeMillis() - segStart;
+        if (duration > 0) {
+            long used = prefs.getLong("daily_usage_ms", 0);
+            prefs.edit()
+                .putLong("daily_usage_ms", used + duration)
+                .putLong("active_segment_start", 0)
+                .apply();
+        }
         translationStartTime = 0;
+    }
+
+    /** يُستدعى عند إيقاف الخدمة - يغلق أي مقطع مفتوح */
+    public void stopTranslation() {
+        pauseActiveUsage(); // احفظ ما تبقى من المقطع الحالي
     }
 
     // ── reset يومي (للمشتركين فقط - المجاني لا يتجدد تلقائياً) ──
