@@ -27,9 +27,5 @@
         domain="sharedpref"
         path="billing_prefs.xml" />
 
-    <!-- ❌ لا يُحفظ: إعدادات الواجهة (اللغة، حجم الخط، موضع الترجمة) -->
-    <exclude
-        domain="sharedpref"
-        path="subtitle_prefs.xml" />
 
 </full-backup-content>
