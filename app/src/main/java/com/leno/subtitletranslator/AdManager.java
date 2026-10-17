@@ -43,9 +43,14 @@ public class AdManager {
     private static final String KEY_LAST_INTERSTITIAL = "last_interstitial_ts";
     private static final String KEY_SESSION_COUNT = "session_count";
 
-    private static final long INTERSTITIAL_COOLDOWN_MS = 3 * 60 * 1000L; // 3 دقائق
+    private static final long INTERSTITIAL_COOLDOWN_MS = 3 * 60 * 1000L; // 3 دقائق بين كل إعلان
     private static final int MIN_SESSIONS_BEFORE_ADS = 2; // بدون إعلان أول جلستين
-    private static final int MAX_APPOPEN_PER_DAY = 1; // FIX: مرة وحدة باليوم بدل مرتين
+    private static final int MAX_APPOPEN_PER_DAY = 1;
+    private static final int MAX_INTERSTITIAL_PER_DAY = 3;   // أقصى 3 إعلانات/يوم
+    private static final long INTERSTITIAL_PAUSE_DAYS = 2;   // بعدين يرتاح يومين
+    private static final String KEY_INTERSTITIAL_DATE  = "interstitial_date";
+    private static final String KEY_INTERSTITIAL_COUNT = "interstitial_count";
+    private static final String KEY_INTERSTITIAL_PAUSE = "interstitial_pause_until";
     private static final String KEY_APPOPEN_DATE = "appopen_date";
     private static final String KEY_APPOPEN_COUNT = "appopen_count";
     // ⚠️ معرفات إعلانية حقيقية (SubtitleTranslator - AdMob) - App ID الرئيسي يروح بالـ AndroidManifest.xml
@@ -152,23 +157,25 @@ public class AdManager {
     }
 
     /**
-     * يعرض interstitial فقط لو: المستخدم FREE + تجاوز الجلسات الدنيا + انتهى الـ cooldown + فيه إعلان جاهز مسبقاً.
-     * استدعها فقط بنقطة توقف طبيعية (مثلاً زر "إيقاف الترجمة" بالـ MainActivity) -
-     * أبداً وسط طلب صلاحية أو بدء تشغيل الخدمة.
+     * يعرض Interstitial للمجاني فقط لما ينتهي رصيده وانتهى الـ cooldown (48 ساعة).
+     * للمشتركين لا يظهر أي إعلان.
+     * استدعها عند انتهاء الرصيد (مثلاً في SubtitleService لما canTranslate() ترجع false).
      *
-     * @param onDismissedOrSkipped يُستدعى دايماً (ظهر الإعلان أو لأ) عشان تكمل الـ flow بعده بدون ما تعلق
+     * @param onDismissedOrSkipped يُستدعى دايماً (ظهر الإعلان أو لأ)
      */
     public void maybeShowInterstitial(Activity activity, Runnable onDismissedOrSkipped){
-        if(!isEligibleForAds(activity) || !isCooldownOver() || interstitialAd == null){
+        UserManager um = new UserManager(activity);
+        // للمشتركين: تخطى الإعلان مباشرة
+        if(!um.isFreeInterstitialReady() || interstitialAd == null){
             preloadInterstitial();
             if(onDismissedOrSkipped != null) onDismissedOrSkipped.run();
             return;
         }
         InterstitialAd ad = interstitialAd;
-        interstitialAd = null; // استهلكناه - لازم نحمّل وحد جديد بعده
+        interstitialAd = null;
         ad.setFullScreenContentCallback(new FullScreenContentCallback(){
             @Override public void onAdDismissedFullScreenContent(){
-                markInterstitialShown();
+                um.markFreeInterstitialShown(); // ابدأ cooldown اليومين
                 preloadInterstitial();
                 if(onDismissedOrSkipped != null) onDismissedOrSkipped.run();
             }
@@ -180,6 +187,7 @@ public class AdManager {
         ad.show(activity);
     }
 
+    // احتفظ بالدوال القديمة للتوافق (غير مستخدمة الحين)
     private boolean isCooldownOver(){
         long last = prefs.getLong(KEY_LAST_INTERSTITIAL, 0);
         return System.currentTimeMillis() - last >= INTERSTITIAL_COOLDOWN_MS;

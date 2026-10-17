@@ -351,29 +351,7 @@ public class MainActivity extends AppCompatActivity {
     // ─────────────────────── Watch Ad for Bonus ──────────────────
 
     private void watchAdForBonus() {
-        if (!userManager.canEarnReward()) {
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("شاهدت إعلانك هذا الأسبوع")
-                .setMessage("استفدت من مكافأة هذا الأسبوع. ارجع الأسبوع القادم أو اشترك للاستمتاع بدون حدود!")
-                .setPositiveButton("اشترك الحين", (d, w) -> showUpgradeDialog())
-                .setNegativeButton("لاحقاً", null)
-                .show();
-            return;
-        }
-        if (!adManager.isRewardedReady()) {
-            android.widget.Toast.makeText(this, "الإعلان ما اتحمل بعد، جرب مرة ثانية", android.widget.Toast.LENGTH_SHORT).show();
-            return;
-        }
-        adManager.showRewarded(this,
-            () -> { // onEarned - شاهد الإعلان كامل
-                userManager.applyRewardBonus();
-                android.widget.Toast.makeText(this, "✅ أضفنا لك 30 دقيقة إضافية!", android.widget.Toast.LENGTH_LONG).show();
-                updateStatus();
-            },
-            () -> { // onSkippedOrFailed
-                android.widget.Toast.makeText(this, "لازم تكمل الإعلان للحصول على المكافأة", android.widget.Toast.LENGTH_SHORT).show();
-            }
-        );
+        // غير مستخدمة - الإعلان يظهر تلقائياً عند انتهاء الرصيد
     }
 
     // ─────────────────────── Status ──────────────────────────────
@@ -382,19 +360,18 @@ public class MainActivity extends AppCompatActivity {
         if (userManager.isSubscribed()) {
             tvRemainingTime.setText("✨ مشترك — غير محدود");
             tvRemainingTime.setTextColor(Color.parseColor("#4CAF50"));
-            btnWatchAd.setVisibility(android.view.View.GONE);
         } else {
             long mins = userManager.getRemainingTime() / 60000;
-            tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة هذا الأسبوع");
-            tvRemainingTime.setTextColor(
-                mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
-            // أظهر زر المكافأة فقط لو فيه مكافآت متبقية اليوم
-            boolean canReward = userManager.canEarnReward();
-            btnWatchAd.setVisibility(canReward ? android.view.View.VISIBLE : android.view.View.GONE);
-            if (canReward) {
-                btnWatchAd.setText("🎬 شاهد إعلان مجاني واحصل +30 دقيقة");
+            if (mins > 0) {
+                tvRemainingTime.setText("⏱️ متبقي: " + mins + " دقيقة");
+                tvRemainingTime.setTextColor(
+                    mins < 5 ? Color.parseColor("#F44336") : Color.parseColor("#FF9800"));
+            } else {
+                tvRemainingTime.setText("⏱️ انتهى الرصيد — اشترك للمزيد");
+                tvRemainingTime.setTextColor(Color.parseColor("#F44336"));
             }
         }
+        btnWatchAd.setVisibility(android.view.View.GONE); // لا يوجد زر مكافأة
     }
 
     // ─────────────────────── Helpers ─────────────────────────────
