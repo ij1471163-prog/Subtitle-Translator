@@ -397,14 +397,9 @@ public class MainActivity extends AppCompatActivity {
         }
         btnWatchAd.setVisibility(android.view.View.GONE); // لا يوجد زر مكافأة
 
-        // زر الـ offline - يظهر فقط للـ PRO
-        UserManager.Tier tier = userManager.getCurrentTier();
-        if (tier == UserManager.Tier.PRO) {
-            btnOfflineMode.setVisibility(android.view.View.VISIBLE);
-            btnOfflineMode.setText(offlineModeActive ? "🌐 العودة للترجمة بالإنترنت" : "📴 ترجمة بدون إنترنت (PRO)");
-        } else {
-            btnOfflineMode.setVisibility(android.view.View.GONE);
-        }
+        // زر الـ offline - يظهر للجميع مؤقتاً للاختبار
+        btnOfflineMode.setVisibility(android.view.View.VISIBLE);
+        btnOfflineMode.setText(offlineModeActive ? "🌐 العودة للترجمة بالإنترنت" : "📴 ترجمة بدون إنترنت (PRO)");
     }
 
     // ─────────────────────── Offline Mode ────────────────────────
